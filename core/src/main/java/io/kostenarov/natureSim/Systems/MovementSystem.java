@@ -3,8 +3,8 @@ package io.kostenarov.natureSim.Systems;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
-import io.kostenarov.natureSim.Components.PositionComponent;
-import io.kostenarov.natureSim.Components.VelocityComponent;
+import com.badlogic.gdx.math.MathUtils;
+import io.kostenarov.natureSim.Components.*;
 
 public class MovementSystem extends IteratingSystem {
     // Map boundaries
@@ -17,30 +17,86 @@ public class MovementSystem extends IteratingSystem {
     private static final float ENTITY_SIZE = 32;
 
     public MovementSystem() {
-        // This system only cares about entities with BOTH components
-        super(Family.all(PositionComponent.class, VelocityComponent.class).get());
+        super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class, GenderComponent.class).get());
     }
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
-        VelocityComponent vel = entity.getComponent(VelocityComponent.class);
+        if(entity.getComponent(StatsComponent.class).energy > 0.2f) {
+            PositionComponent pos = entity.getComponent(PositionComponent.class);
+            VelocityComponent vel = entity.getComponent(VelocityComponent.class);
+            GenomeComponent dna = entity.getComponent(GenomeComponent.class);
 
-        // Standard Physics: Position = Position + (Velocity * Time)
-        pos.position.x += vel.velocity.x * deltaTime;
-        pos.position.y += vel.velocity.y * deltaTime;
+            float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
 
-        // Apply map constraints (boundaries)
-        pos.position.x = Math.max(MAP_MIN_X, Math.min(MAP_MAX_X - ENTITY_SIZE, pos.position.x));
-        pos.position.y = Math.max(MAP_MIN_Y, Math.min(MAP_MAX_Y - ENTITY_SIZE, pos.position.y));
+            // Normalize and apply velocity
+            vel.velocity.nor().scl(speedMultiplier);
+
+            pos.position.x += vel.velocity.x * deltaTime;
+            pos.position.y += vel.velocity.y * deltaTime;
+
+            boolean hitBoundary = false;
+
+            // Apply map constraints (boundaries)
+            if (pos.position.x < MAP_MIN_X) {
+                pos.position.x = MAP_MIN_X;
+                hitBoundary = true;
+            } else if (pos.position.x > MAP_MAX_X - ENTITY_SIZE) {
+                pos.position.x = MAP_MAX_X - ENTITY_SIZE;
+                hitBoundary = true;
+            }
+
+            if (pos.position.y < MAP_MIN_Y) {
+                pos.position.y = MAP_MIN_Y;
+                hitBoundary = true;
+            } else if (pos.position.y > MAP_MAX_Y - ENTITY_SIZE) {
+                pos.position.y = MAP_MAX_Y - ENTITY_SIZE;
+                hitBoundary = true;
+            }
+
+            if (hitBoundary) {
+                float angleDeg = MathUtils.random(0f, 360f);
+                vel.velocity.set(MathUtils.cosDeg(angleDeg), MathUtils.sinDeg(angleDeg));
+            }
+
+            // Update vision direction based on velocity direction
+            VisionComponent vision = entity.getComponent(VisionComponent.class);
+            if (vision != null && (vel.velocity.x != 0 || vel.velocity.y != 0)) {
+                // Calculate angle from velocity vector (in degrees)
+                float angle = (float) Math.toDegrees(Math.atan2(vel.velocity.y, vel.velocity.x));
+                vision.directionAngle = angle;
+            }
+            decreaseStats(entity);
+        }
+        else if(entity.getComponent(StatsComponent.class).energy < 0.2f) {
+            entity.getComponent(StatsComponent.class).energy += 0.001f;
+        }
     }
 
-    // Getter methods for boundaries (useful for camera system)
     public static float getMapMaxX() {
         return MAP_MAX_X;
     }
 
     public static float getMapMaxY() {
         return MAP_MAX_Y;
+    }
+
+    private void decreaseStats(Entity entity) {
+        StatsComponent stats = entity.getComponent(StatsComponent.class);
+        if (stats != null) {
+            stats.hunger = Math.max(0, stats.hunger - 0.002f);
+            stats.thirst = Math.max(0, stats.thirst - 0.001f);
+            stats.energy = Math.max(0, stats.energy - 0.1f);
+        }
+        decreaseHealth(entity);
+    }
+
+    private void decreaseHealth(Entity entity) {
+        StatsComponent stats = entity.getComponent(StatsComponent.class);
+        if (stats != null) {
+            if (stats.hunger <= 0 || stats.thirst <= 0) {
+                stats.health = Math.max(0, stats.health - 0.2f);
+            }
+        }
     }
 }

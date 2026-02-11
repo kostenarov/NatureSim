@@ -85,6 +85,12 @@ public class CameraSystem extends EntitySystem {
         if (Gdx.input.isKeyPressed(Input.Keys.RIGHT) || Gdx.input.isKeyPressed(Input.Keys.D)) {
             camera.position.x += moveAmount;
         }
+        if (Gdx.input.isKeyPressed(Input.Keys.Q)) {
+            camera.zoom += 0.01f; // Zoom out
+        }
+        if (Gdx.input.isKeyPressed(Input.Keys.E)) {
+            camera.zoom -= 0.01f; // Zoom in
+        }
 
         // Toggle auto-follow with spacebar
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {

@@ -1,0 +1,35 @@
+# Gradle
+.gradle/
+/build/
+
+# IntelliJ
+/.idea/
+*.iml
+out/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+
+# Native image / libs
+/native-libs/
+
+# Logs
+logs/
+*.log
+
+# Generated assets
+assets/*.png
+assets/*.atlas
+
+# Ignore local gradle wrapper jar download
+gradle/wrapper/gradle-wrapper.jar
+

@@ -1,12 +1,9 @@
 package io.kostenarov.natureSim.Components;
 
 import com.badlogic.ashley.core.Component;
+import io.kostenarov.natureSim.Enums.Gender;
 
 public class GenderComponent implements Component {
-    public enum Gender {
-        MALE,
-        FEMALE
-    }
 
     public Gender gender;
 

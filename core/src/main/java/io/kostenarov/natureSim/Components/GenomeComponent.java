@@ -3,7 +3,6 @@ package io.kostenarov.natureSim.Components;
 import com.badlogic.ashley.core.Component;
 
 public class GenomeComponent implements Component {
-    // We define indices for different traits
     public static final int SPEED = 0;
     public static final int VISION = 1;
     public static final int SIZE = 2;
@@ -12,7 +11,7 @@ public class GenomeComponent implements Component {
 
     public GenomeComponent() {
         for (int i = 0; i < genes.length; i++) {
-            genes[i] = (float) Math.random();
+            genes[i] = (float) Math.random() * 2;
         }
     }
 }

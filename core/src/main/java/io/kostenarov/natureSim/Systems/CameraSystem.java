@@ -15,7 +15,7 @@ public class CameraSystem extends EntitySystem {
     private float viewportHeight;
     private Entity targetEntity;
     private float cameraSmoothness = 0.1f; // Lower = smoother, higher = snappier
-    private float cameraSpeed = 200f; // Speed of manual camera movement in pixels/second
+    private float cameraSpeed = 400f; // Speed of manual camera movement in pixels/second
     private boolean autoFollowEnabled = true; // Toggle between auto-follow and manual control
 
     // Map boundaries
@@ -31,7 +31,6 @@ public class CameraSystem extends EntitySystem {
     @Override
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
-        // Target the first entity found with PositionComponent
         for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).get())) {
             targetEntity = entity;
             break;
@@ -85,10 +84,10 @@ public class CameraSystem extends EntitySystem {
         if (Gdx.input.isKeyPressed(Input.Keys.RIGHT) || Gdx.input.isKeyPressed(Input.Keys.D)) {
             camera.position.x += moveAmount;
         }
-        if (Gdx.input.isKeyPressed(Input.Keys.Q)) {
+        if (Gdx.input.isKeyPressed(Input.Keys.Q) && camera.zoom < 2f) {
             camera.zoom += 0.01f; // Zoom out
         }
-        if (Gdx.input.isKeyPressed(Input.Keys.E)) {
+        if (Gdx.input.isKeyPressed(Input.Keys.E) && camera.zoom > 0.5f) {
             camera.zoom -= 0.01f; // Zoom in
         }
 

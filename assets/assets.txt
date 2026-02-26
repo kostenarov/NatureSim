@@ -1,5 +1,5 @@
 agent.png
-libgdx.png
+field.png
 ui/font-list.fnt
 ui/font-subtitle.fnt
 ui/font-window.fnt

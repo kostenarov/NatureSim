@@ -20,6 +20,7 @@ import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
+import io.kostenarov.natureSim.Components.BehaviourComponent;
 import io.kostenarov.natureSim.Systems.CameraSystem;
 import io.kostenarov.natureSim.Systems.MovementSystem;
 import io.kostenarov.natureSim.Systems.VisionRenderingSystem;
@@ -28,62 +29,94 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
     private Texture agentTexture;
-    private Engine engine; // The Ashley Engine
+    private Engine engine;
     private OrthographicCamera camera;
     private OrthographicCamera uiCamera;
     private CameraSystem cameraSystem;
     private ShapeDrawer shapeDrawer;
-    private Texture whitePixel; // 1x1 white pixel texture for ShapeDrawer
+    private Texture whitePixel;
     private BitmapFont font;
     private Entity selectedEntity;
+    private Texture fieldTexture;
+    private com.badlogic.gdx.graphics.g2d.TextureRegion tileRegion;
+    private static final float TILE_SIZE = 40f;
+    private final float screenWidth = 2560f;
+    private final float screenHeight = 1440f;
+    private float currentScreenWidth;
+    private float currentScreenHeight;
 
     @Override
     public void create() {
         batch = new SpriteBatch();
-        agentTexture = new Texture("agent.png"); // Make sure you have an image!
-        engine = new Engine();
 
-        // Create a 1x1 white pixel texture for ShapeDrawer
+        initTextures();
+
+        initShapeDrawer();
+
+        initCameras();
+
+        font = new BitmapFont();
+
+        initEngineAndSystems();
+
+        createInitialAgents();
+
+        currentScreenWidth = screenWidth;
+        currentScreenHeight = screenHeight;
+    }
+
+    private void initTextures() {
+        agentTexture = new Texture("agent.png");
+        fieldTexture = new Texture(Gdx.files.internal("field.png"), true);
+        fieldTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        int regionW = Math.min(fieldTexture.getWidth(), (int) TILE_SIZE);
+        int regionH = Math.min(fieldTexture.getHeight(), (int) TILE_SIZE);
+        tileRegion = new TextureRegion(fieldTexture, 0, 0, regionW, regionH);
+    }
+
+    private void initShapeDrawer() {
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pixmap.setColor(1, 1, 1, 1); // White with full opacity
         pixmap.fill();
         whitePixel = new Texture(pixmap);
         pixmap.dispose();
-
-        // Initialize ShapeDrawer for vision cone visualization
         shapeDrawer = new ShapeDrawer(batch, new TextureRegion(whitePixel));
+    }
 
-        // Initialize camera (viewport size matches the game window)
+    private void initCameras() {
         camera = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(Gdx.graphics.getWidth() / 2, Gdx.graphics.getHeight() / 2, 0);
+        camera.position.set(Gdx.graphics.getWidth() / 2f, Gdx.graphics.getHeight() / 2f, 0);
         camera.update();
 
-        // UI camera (screen space)
         uiCamera = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        uiCamera.position.set(Gdx.graphics.getWidth() / 2, Gdx.graphics.getHeight() / 2, 0);
+        uiCamera.position.set(Gdx.graphics.getWidth() / 2f, Gdx.graphics.getHeight() / 2f, 0);
         uiCamera.update();
+    }
 
-        font = new BitmapFont();
-
-        // 1. Add the systems to the engine
+    private void initEngineAndSystems() {
+        engine = new Engine();
         engine.addSystem(new MovementSystem());
         cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         engine.addSystem(cameraSystem);
         engine.addSystem(new VisionRenderingSystem(shapeDrawer, camera));
-
-        // 2. Create the first agents
-        createAgent(100, 100, 150, 150f, 120f);
-        createAgent(100, 200, 100, 300f, 100f);
     }
 
-    private void createAgent(float x, float y, float speed, float visionRange, float visionAngle) {
+    private void createInitialAgents() {
+        createAgent(300, 200, 200, 45f, 100f, 100f);
+        createAgent(500, 400, 100, 90f, 150f, 180f);
+        createAgent(600, 400, 100, 90f, 300f, 170f);
+        createAgent(700, 400, 100, 90f, 220f, 100f);
+        createAgent(800, 400, 100, 90f, 150f, 90f);
+    }
+
+    private void createAgent(float x, float y, float speed, float angle, float visionRange, float visionAngle) {
         Entity agent = engine.createEntity();
         PositionComponent pos = new PositionComponent();
         pos.position.set(x, y);
         agent.add(pos);
 
-        VelocityComponent vel = new VelocityComponent();
-        vel.velocity.set(speed, 0);
+        VelocityComponent vel = new VelocityComponent(speed);
+        vel.velocity.set(angle, angle);
         agent.add(vel);
 
         GenomeComponent dna = new GenomeComponent();
@@ -99,42 +132,84 @@ public class Main extends ApplicationAdapter {
         VisionComponent vision = new VisionComponent(visionRange, visionAngle);
         agent.add(vision);
 
+        // Add BehaviourComponent for decision-making system
+        BehaviourComponent behaviour = new BehaviourComponent();
+        agent.add(behaviour);
+
         engine.addEntity(agent);
     }
 
     @Override
     public void render() {
-        ScreenUtils.clear(0.30f, 0.40f, 0.30f, 1f); // Muddy background
+        ScreenUtils.clear(0.30f, 0.40f, 0.30f, 1f);
 
-        // Update the ECS engine (this runs MovementSystem and CameraSystem)
+        updateEngineAndInput();
+
+        renderBackgroundTiles();
+        renderEntities();
+        renderUI();
+    }
+
+    private void updateEngineAndInput() {
         float deltaTime = Gdx.graphics.getDeltaTime();
         engine.update(deltaTime);
 
-        // Handle selection clicks
         if (Gdx.input.justTouched()) {
             float screenX = Gdx.input.getX();
             float screenY = Gdx.input.getY();
             selectEntityAtScreen(screenX, screenY);
         }
+    }
 
-        // Set the camera's projection matrix for all rendering
+    private void renderBackgroundTiles() {
         batch.setProjectionMatrix(camera.combined);
-
-        // Draw the vision cones (rendered before agents so they appear behind)
-        // This needs to be done with the batch active for ShapeDrawer
         batch.begin();
-        batch.flush(); // Flush any existing batch rendering
+        float mapWidth = MovementSystem.getMapMaxX();
+        float mapHeight = MovementSystem.getMapMaxY();
 
-        // Update vision cones
+        float halfViewportW = (camera.viewportWidth * camera.zoom) / 2f;
+        float halfViewportH = (camera.viewportHeight * camera.zoom) / 2f;
+        float visibleLeft = camera.position.x - halfViewportW;
+        float visibleRight = camera.position.x + halfViewportW;
+        float visibleBottom = camera.position.y - halfViewportH;
+        float visibleTop = camera.position.y + halfViewportH;
+
+        int startIx = (int) Math.floor(Math.max(0f, visibleLeft) / TILE_SIZE);
+        int endIx = (int) Math.floor(Math.min(mapWidth - 1f, visibleRight) / TILE_SIZE);
+        int startIy = (int) Math.floor(Math.max(0f, visibleBottom) / TILE_SIZE);
+        int endIy = (int) Math.floor(Math.min(mapHeight - 1f, visibleTop) / TILE_SIZE);
+
+        for (int ix = startIx; ix <= endIx; ix++) {
+            float x = ix * TILE_SIZE;
+            float tileWidth = Math.min(TILE_SIZE, mapWidth - x);
+            for (int iy = startIy; iy <= endIy; iy++) {
+                float y = iy * TILE_SIZE;
+                float tileHeight = Math.min(TILE_SIZE, mapHeight - y);
+
+                int srcW = Math.max(1, Math.min((int) tileWidth, tileRegion.getRegionWidth()));
+                int srcH = Math.max(1, Math.min((int) tileHeight, tileRegion.getRegionHeight()));
+                TextureRegion srcRegion = (srcW == tileRegion.getRegionWidth() && srcH == tileRegion.getRegionHeight())
+                        ? tileRegion
+                        : new TextureRegion(fieldTexture, 0, 0, srcW, srcH);
+
+                batch.draw(srcRegion, x, y, tileWidth, tileHeight);
+            }
+        }
+        batch.end();
+    }
+
+    private void renderEntities() {
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        batch.flush();
+
         for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class, VisionComponent.class).get())) {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
             VisionComponent vision = entity.getComponent(VisionComponent.class);
-
-            // Draw the vision cone
             drawVisionCone(pos.position.x + 16, pos.position.y + 16, vision);
         }
 
-        batch.flush(); // Flush before switching to agent rendering
+        batch.flush();
 
         // Draw the agents
         for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).get())) {
@@ -142,8 +217,9 @@ public class Main extends ApplicationAdapter {
             batch.draw(agentTexture, pos.position.x, pos.position.y);
         }
         batch.end();
+    }
 
-        // Draw UI on top
+    private void renderUI() {
         batch.setProjectionMatrix(uiCamera.combined);
         batch.begin();
         drawStatsPanel();
@@ -151,7 +227,6 @@ public class Main extends ApplicationAdapter {
     }
 
     private void selectEntityAtScreen(float screenX, float screenY) {
-        // Convert screen to world coordinates
         Vector3 worldCoords = camera.unproject(new Vector3(screenX, screenY, 0));
 
         Entity picked = null;
@@ -159,7 +234,7 @@ public class Main extends ApplicationAdapter {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
             float x = pos.position.x;
             float y = pos.position.y;
-            float size = 32f; // Agent sprite size
+            float size = 32f;
 
             if (worldCoords.x >= x && worldCoords.x <= x + size && worldCoords.y >= y && worldCoords.y <= y + size) {
                 picked = entity;
@@ -176,15 +251,26 @@ public class Main extends ApplicationAdapter {
         }
 
         StatsComponent stats = selectedEntity.getComponent(StatsComponent.class);
+        GenderComponent gender = selectedEntity.getComponent(GenderComponent.class);
+        BehaviourComponent behaviour = selectedEntity.getComponent(BehaviourComponent.class);
+
         if (stats == null) {
             return;
         }
 
-        float panelWidth = 220f;
-        float panelHeight = 120f;
-        float padding = 10f;
+        if(gender == null) {
+            return;
+        }
+
+        float widthScale = currentScreenWidth / screenWidth;
+        float heightScale = currentScreenHeight / screenHeight;
+
+        float panelWidth = 440f * widthScale;
+        float panelHeight = 280f * heightScale;
+        float padding = 20f * heightScale;
         float x = padding;
-        float y = uiCamera.viewportHeight - panelHeight - padding;
+        float topY = uiCamera.position.y + (uiCamera.viewportHeight / 2f);
+        float y = topY - panelHeight - padding;
 
         Color panelBg = new Color(0.08f, 0.08f, 0.08f, 0.7f);
         Color panelBorder = new Color(0.6f, 0.6f, 0.6f, 0.8f);
@@ -193,18 +279,25 @@ public class Main extends ApplicationAdapter {
         shapeDrawer.rectangle(x, y, panelWidth, panelHeight, panelBorder, 1f);
 
         font.setColor(Color.WHITE);
+        font.getData().setScale(2.5f * widthScale * heightScale); // Scale font based on current screen width
         float textX = x + 10f;
         float textY = y + panelHeight - 10f;
 
         font.draw(batch, "STATS", textX, textY);
-        textY -= 20f;
+        textY -= 50f * heightScale;
         font.draw(batch, "Hunger: " + (int) stats.hunger, textX, textY);
-        textY -= 16f;
+        textY -= 40f * heightScale;
         font.draw(batch, "Thirst: " + (int) stats.thirst, textX, textY);
-        textY -= 16f;
+        textY -= 40f * heightScale;
         font.draw(batch, "Energy: " + (int) stats.energy, textX, textY);
-        textY -= 16f;
+        textY -= 40f * heightScale;
         font.draw(batch, "Health: " + (int) stats.health, textX, textY);
+        textY -= 40f * heightScale;
+        font.draw(batch, "Gender: " + gender.gender, textX, textY);
+        textY -= 40f * heightScale;
+        font.draw(batch, "Speed: " + String.format("%.2f", selectedEntity.getComponent(GenomeComponent.class).genes[GenomeComponent.SPEED] * 250f), textX, textY);
+        textY -= 40f * heightScale;
+        font.draw(batch, "Behaviour: " + behaviour.behaviour, textX, textY);
     }
 
     /**
@@ -304,5 +397,26 @@ public class Main extends ApplicationAdapter {
         if (font != null) {
             font.dispose();
         }
+        if (fieldTexture != null) {
+            fieldTexture.dispose();
+        }
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        currentScreenWidth = width;
+        currentScreenHeight = height;
+
+        // Update world camera and recenter it
+        camera.viewportWidth = width;
+        camera.viewportHeight = height;
+        camera.position.set(width / 2f, height / 2f, 0);
+        camera.update();
+
+        // Update UI camera and recenter so screen-space coordinates align with window
+        uiCamera.viewportWidth = width;
+        uiCamera.viewportHeight = height;
+        uiCamera.position.set(width / 2f, height / 2f, 0);
+        uiCamera.update();
     }
 }

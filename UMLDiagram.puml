@@ -1,0 +1,39 @@
+@startuml
+title NatureSim - Brief UML
+package "Core" {
+  class Main {
+    + create()
+    + render()
+  }
+}
+package "Systems" {
+  class MovementSystem
+  class FoodSourceSystem
+  class CameraSystem
+}
+package "Entity" {
+  class PositionComponent
+  class VelocityComponent
+  class StatsComponent
+  class BehaviourComponent
+  class VisionComponent
+  class FoodSourceComponent
+}
+package "Enums" {
+  enum EntityBehaviour
+  enum Gender
+}
+Main --> MovementSystem
+Main --> FoodSourceSystem
+Main --> CameraSystem
+MovementSystem ..> PositionComponent
+MovementSystem ..> VelocityComponent
+MovementSystem ..> StatsComponent
+MovementSystem ..> BehaviourComponent
+MovementSystem ..> VisionComponent
+MovementSystem ..> FoodSourceComponent
+FoodSourceSystem ..> FoodSourceComponent
+FoodSourceSystem ..> PositionComponent
+CameraSystem ..> PositionComponent
+BehaviourComponent --> EntityBehaviour
+@enduml

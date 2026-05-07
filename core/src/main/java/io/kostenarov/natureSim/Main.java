@@ -21,14 +21,17 @@ import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.BehaviourComponent;
+import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Systems.CameraSystem;
 import io.kostenarov.natureSim.Systems.MovementSystem;
 import io.kostenarov.natureSim.Systems.VisionRenderingSystem;
+import io.kostenarov.natureSim.Systems.FoodSourceSystem;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
     private Texture agentTexture;
+    private Texture foodTexture;
     private Engine engine;
     private OrthographicCamera camera;
     private OrthographicCamera uiCamera;
@@ -67,6 +70,14 @@ public class Main extends ApplicationAdapter {
 
     private void initTextures() {
         agentTexture = new Texture("agent.png");
+
+        // Create a simple green circle texture for food
+        Pixmap foodPixmap = new Pixmap(16, 16, Pixmap.Format.RGBA8888);
+        foodPixmap.setColor(0.2f, 0.8f, 0.2f, 1f);
+        foodPixmap.fillCircle(8, 8, 7);
+        foodTexture = new Texture(foodPixmap);
+        foodPixmap.dispose();
+
         fieldTexture = new Texture(Gdx.files.internal("field.png"), true);
         fieldTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         int regionW = Math.min(fieldTexture.getWidth(), (int) TILE_SIZE);
@@ -95,6 +106,7 @@ public class Main extends ApplicationAdapter {
 
     private void initEngineAndSystems() {
         engine = new Engine();
+        engine.addSystem(new FoodSourceSystem());
         engine.addSystem(new MovementSystem());
         cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         engine.addSystem(cameraSystem);
@@ -211,8 +223,14 @@ public class Main extends ApplicationAdapter {
 
         batch.flush();
 
+        // Draw food sources
+        for (Entity entity : engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get())) {
+            PositionComponent pos = entity.getComponent(PositionComponent.class);
+            batch.draw(foodTexture, pos.position.x, pos.position.y);
+        }
+
         // Draw the agents
-        for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).get())) {
+        for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).exclude(FoodSourceComponent.class).get())) {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
             batch.draw(agentTexture, pos.position.x, pos.position.y);
         }
@@ -391,6 +409,9 @@ public class Main extends ApplicationAdapter {
     public void dispose() {
         batch.dispose();
         agentTexture.dispose();
+        if (foodTexture != null) {
+            foodTexture.dispose();
+        }
         if (whitePixel != null) {
             whitePixel.dispose();
         }

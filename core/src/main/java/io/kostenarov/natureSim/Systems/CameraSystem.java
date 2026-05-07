@@ -8,6 +8,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import io.kostenarov.natureSim.Components.PositionComponent;
+import io.kostenarov.natureSim.Components.VisionComponent;
 
 public class CameraSystem extends EntitySystem {
     private OrthographicCamera camera;
@@ -31,7 +32,8 @@ public class CameraSystem extends EntitySystem {
     @Override
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
-        for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).get())) {
+        // Only follow agents (entities with VisionComponent), not food sources
+        for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class, VisionComponent.class).get())) {
             targetEntity = entity;
             break;
         }

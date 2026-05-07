@@ -14,6 +14,8 @@ public class BehaviourComponent implements Component {
 
     // Target point for movement
     public Vector2 targetPoint = new Vector2();
+    // Whether a valid targetPoint is set. Using a separate flag avoids treating (0,0) as "no target".
+    public boolean hasTarget = false;
     public float targetReachedThreshold = 20f; // Distance to consider target as reached
 
     // Pause/scan behavior after reaching a target.

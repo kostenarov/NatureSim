@@ -18,4 +18,8 @@ public class GenomeComponent implements Component {
             genes[i] = (float) Math.random() * 2;
         }
     }
+
+    public GenomeComponent(float[] genes) {
+        this.genes = genes;
+    }
 }

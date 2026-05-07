@@ -22,10 +22,12 @@ import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.BehaviourComponent;
 import io.kostenarov.natureSim.Components.FoodSourceComponent;
+import io.kostenarov.natureSim.Components.ReproductionComponent;
 import io.kostenarov.natureSim.Systems.CameraSystem;
 import io.kostenarov.natureSim.Systems.MovementSystem;
 import io.kostenarov.natureSim.Systems.VisionRenderingSystem;
 import io.kostenarov.natureSim.Systems.FoodSourceSystem;
+import io.kostenarov.natureSim.Systems.MatingSystem;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
 public class Main extends ApplicationAdapter {
@@ -107,6 +109,7 @@ public class Main extends ApplicationAdapter {
     private void initEngineAndSystems() {
         engine = new Engine();
         engine.addSystem(new FoodSourceSystem());
+        engine.addSystem(new MatingSystem());
         engine.addSystem(new MovementSystem());
         cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         engine.addSystem(cameraSystem);
@@ -119,6 +122,12 @@ public class Main extends ApplicationAdapter {
         createAgent(600, 400, 100, 90f, 300f, 170f);
         createAgent(700, 400, 100, 90f, 220f, 100f);
         createAgent(800, 400, 100, 90f, 150f, 90f);
+        createAgent(900, 400, 100, 90f, 150f, 90f);
+        createAgent(1300, 400, 150, 95f, 130f, 90f);
+        createAgent(1400, 400, 120, 93f, 111f, 100f);
+        createAgent(1500, 400, 120, 70f, 120f, 70f);
+        createAgent(1100, 200, 110, 20f, 150f, 83f);
+        createAgent(1000, 500, 140, 1200f, 112f, 90f);
     }
 
     private void createAgent(float x, float y, float speed, float angle, float visionRange, float visionAngle) {
@@ -147,6 +156,10 @@ public class Main extends ApplicationAdapter {
         // Add BehaviourComponent for decision-making system
         BehaviourComponent behaviour = new BehaviourComponent();
         agent.add(behaviour);
+
+        // Add ReproductionComponent for mating system
+        ReproductionComponent reproduction = new ReproductionComponent();
+        agent.add(reproduction);
 
         engine.addEntity(agent);
     }
@@ -240,8 +253,21 @@ public class Main extends ApplicationAdapter {
     private void renderUI() {
         batch.setProjectionMatrix(uiCamera.combined);
         batch.begin();
+        drawPopulationCounter();
         drawStatsPanel();
         batch.end();
+    }
+
+    private void drawPopulationCounter() {
+        // Count agents (entities with StatsComponent)
+        int populationCount = 0;
+        for (Entity entity : engine.getEntitiesFor(Family.all(StatsComponent.class, GenomeComponent.class).get())) {
+            populationCount++;
+        }
+
+        font.setColor(Color.WHITE);
+        font.getData().setScale(2f);
+        font.draw(batch, "Population: " + populationCount, 20f, uiCamera.position.y + (uiCamera.viewportHeight / 2f) - 20f);
     }
 
     private void selectEntityAtScreen(float screenX, float screenY) {

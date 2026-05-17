@@ -10,8 +10,10 @@ public class GenomeComponent implements Component {
     public static final int RECOVERY_RATE = 4;        // Affects energy recovery rate
     public static final int HUNGER_SENSITIVITY = 5;   // Affects how quickly hunger increases
     public static final int THIRST_SENSITIVITY = 6;   // Affects how quickly thirst increases
+    public static final int SCENT_RANGE = 7;          // Affects how far the creature can smell resources and threats (PREDATOR SPECIFIC FOR NOW)
+    public static final int STEALTH = 8;              // Affects how easily the creature can be detected by predators and prey (PREDATOR SPECIFIC)
 
-    public float[] genes = new float[7];
+    public float[] genes = new float[9];
 
     public GenomeComponent() {
         for (int i = 0; i < genes.length; i++) {

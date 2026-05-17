@@ -24,6 +24,7 @@ public class MovementSystem extends IteratingSystem {
 
     private static final float FOOD_SEEK_THRESHOLD = 60f; // Seek food when hunger drops below this
     private static final float FOOD_CONSUMPTION_DISTANCE = 32f; // How close to be to eat food
+    private static final float PREY_ESCAPE_SPEED_MULTIPLIER = 1.25f;
 
     // Base per-second rates (before genome modifiers). Using per-second makes behavior stable regardless of frame rate.
     // Individual agents will have these rates scaled by their genome genes.
@@ -36,7 +37,7 @@ public class MovementSystem extends IteratingSystem {
     private ImmutableArray<Entity> foodEntities;
 
     public MovementSystem() {
-        super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class, GenderComponent.class, BehaviourComponent.class).get());
+        super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class, GenderComponent.class, StatsComponent.class, BehaviourComponent.class).exclude(PredatorComponent.class).get());
     }
 
     @Override
@@ -53,11 +54,7 @@ public class MovementSystem extends IteratingSystem {
         }
 
         EntityBehaviour behaviour = decideBehaviour(entity);
-        // Commit the decided behaviour immediately so movement-related helpers see the same state.
-        // Reset behaviourTimer so the existing timing mechanism doesn't fight the immediate commit.
         behaviourComponent.behaviour = behaviour;
-        behaviourComponent.behaviourTimer = 0f;
-        behaviourComponent.update(behaviour, deltaTime);
 
         executeBehaviour(entity, behaviour, deltaTime);
     }
@@ -65,6 +62,14 @@ public class MovementSystem extends IteratingSystem {
     private EntityBehaviour decideBehaviour(Entity entity) {
         StatsComponent stats = entity.getComponent(StatsComponent.class);
         BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
+        if (stats == null || behaviour == null) {
+            return EntityBehaviour.IDLE;
+        }
+
+        Entity threateningPredator = findNearestVisiblePredator(entity);
+        if (threateningPredator != null) {
+            return EntityBehaviour.FLEEING;
+        }
 
         // Check critical needs first
         if (stats.hunger < FOOD_SEEK_THRESHOLD) {
@@ -88,23 +93,34 @@ public class MovementSystem extends IteratingSystem {
 
     private void executeBehaviour(Entity entity, EntityBehaviour behaviour, float deltaTime) {
         VelocityComponent vel = entity.getComponent(VelocityComponent.class);
-        switch (behaviour) {
-            case SEEKING_FOOD:
-                seekFood(entity, deltaTime);
-                decreaseStats(entity, deltaTime);
-                break;
-            case SEEKING_WATER:
-                //TODO: Implement water seeking logic (e.g., move towards nearest water source)
-                break;
-            case IDLE:
-                // Hard stop while resting so there is no residual drift/wobble.
-                vel.velocity.set(0f, 0f);
-                recoverEnergy(entity, deltaTime);
-                break;
-            case EXPLORING:
-                explore(entity, deltaTime);
-                decreaseStats(entity, deltaTime);
-                break;
+        if (behaviour == EntityBehaviour.FLEEING) {
+            fleeFromPredator(entity, deltaTime);
+            decreaseStats(entity, deltaTime);
+            return;
+        }
+
+        if (behaviour == EntityBehaviour.SEEKING_FOOD) {
+            seekFood(entity, deltaTime);
+            decreaseStats(entity, deltaTime);
+            return;
+        }
+
+        if (behaviour == EntityBehaviour.SEEKING_WATER) {
+            // TODO: Implement water seeking logic (e.g., move towards nearest water source)
+            vel.velocity.set(0f, 0f);
+            return;
+        }
+
+        if (behaviour == EntityBehaviour.IDLE) {
+            // Hard stop while resting so there is no residual drift/wobble.
+            vel.velocity.set(0f, 0f);
+            recoverEnergy(entity, deltaTime);
+            return;
+        }
+
+        if (behaviour == EntityBehaviour.EXPLORING) {
+            explore(entity, deltaTime);
+            decreaseStats(entity, deltaTime);
         }
     }
 
@@ -115,70 +131,66 @@ public class MovementSystem extends IteratingSystem {
         PositionComponent pos = entity.getComponent(PositionComponent.class);
         VisionComponent vision = entity.getComponent(VisionComponent.class);
 
-        if (behaviour.behaviour != EntityBehaviour.IDLE) {
-            // If agent is in the "look around" pause, keep it stationary until timer expires.
-            if (behaviour.waitingAtTarget) {
-                vel.velocity.set(0f, 0f);
-                behaviour.waitAtTargetTimer -= deltaTime;
-                if (behaviour.waitAtTargetTimer <= 0f) {
-                    behaviour.waitingAtTarget = false;
-                    // Pick a new random heading, then the next target is chosen from it.
-                    behaviour.directionAngle = MathUtils.random(0f, 360f);
-                    // Update vision direction immediately so the "look around" is visible
-                    vision.directionAngle = behaviour.directionAngle;
-                    behaviour.targetPoint.setZero();
-                    behaviour.hasTarget = false;
-                }
-                return;
-            }
+        if (behaviour.behaviour == EntityBehaviour.IDLE) {
+            return;
+        }
 
-            // If current target is reached, start pause/scan state.
-            if (behaviour.hasTarget && isTargetReached(pos, behaviour)) {
-                vel.velocity.set(0f, 0f);
-                behaviour.waitingAtTarget = true;
-                behaviour.waitAtTargetTimer = BehaviourComponent.WAIT_AT_TARGET_DURATION;
-                return;
-            }
-
-            // Pick a new target point if one doesn't exist.
-            if (!behaviour.hasTarget) {
-                pickTargetPointInVisibleArea(entity);
-            }
-
-            // Move toward the target point with snap-to-target to avoid overshoot/wobble
-            if (behaviour.hasTarget) {
-                float distanceToTarget = pos.position.dst(behaviour.targetPoint);
-                float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
-                float step = speedMultiplier * deltaTime;
-
-                if (step >= distanceToTarget) {
-                    // Snap to target, stop and enter waiting state
-                    pos.position.set(behaviour.targetPoint);
-                    vel.velocity.set(0f, 0f);
-                    behaviour.hasTarget = false;
-                    behaviour.waitingAtTarget = true;
-                    behaviour.waitAtTargetTimer = BehaviourComponent.WAIT_AT_TARGET_DURATION;
-                } else {
-                    // Normal movement toward target
-                    moveTowardTarget(entity, behaviour.targetPoint, dna);
-                    updatePosition(pos, vel, deltaTime);
-                }
-            }
-
-            boolean hitBoundary = constrainPositionToBounds(pos);
-            if (hitBoundary) {
-                // Stop, re-orient randomly, then re-target in that direction.
-                vel.velocity.set(0f, 0f);
+        // If agent is in the "look around" pause, keep it stationary until timer expires.
+        if (behaviour.waitingAtTarget) {
+            vel.velocity.set(0f, 0f);
+            behaviour.waitAtTargetTimer -= deltaTime;
+            if (behaviour.waitAtTargetTimer <= 0f) {
+                behaviour.waitingAtTarget = false;
                 behaviour.directionAngle = MathUtils.random(0f, 360f);
                 vision.directionAngle = behaviour.directionAngle;
                 behaviour.targetPoint.setZero();
                 behaviour.hasTarget = false;
-                pickTargetPointInVisibleArea(entity);
             }
+            return;
+        }
 
-            if (!hitBoundary) {
-                updateVisionDirection(entity);
+        // If current target is reached, start pause/scan state.
+        if (behaviour.hasTarget && isTargetReached(pos, behaviour)) {
+            vel.velocity.set(0f, 0f);
+            behaviour.waitingAtTarget = true;
+            behaviour.waitAtTargetTimer = BehaviourComponent.WAIT_AT_TARGET_DURATION;
+            return;
+        }
+
+        // Pick a new target point if one doesn't exist.
+        if (!behaviour.hasTarget) {
+            pickTargetPointInVisibleArea(entity);
+        }
+
+        if (behaviour.hasTarget) {
+            float distanceToTarget = pos.position.dst(behaviour.targetPoint);
+            float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
+            float step = speedMultiplier * deltaTime;
+
+            if (step >= distanceToTarget) {
+                pos.position.set(behaviour.targetPoint);
+                vel.velocity.set(0f, 0f);
+                behaviour.hasTarget = false;
+                behaviour.waitingAtTarget = true;
+                behaviour.waitAtTargetTimer = BehaviourComponent.WAIT_AT_TARGET_DURATION;
+            } else {
+                moveTowardTarget(entity, behaviour.targetPoint, dna);
+                updatePosition(pos, vel, deltaTime);
             }
+        }
+
+        boolean hitBoundary = constrainPositionToBounds(pos);
+        if (hitBoundary) {
+            vel.velocity.set(0f, 0f);
+            behaviour.directionAngle = MathUtils.random(0f, 360f);
+            vision.directionAngle = behaviour.directionAngle;
+            behaviour.targetPoint.setZero();
+            behaviour.hasTarget = false;
+            pickTargetPointInVisibleArea(entity);
+        }
+
+        if (!hitBoundary) {
+            updateVisionDirection(entity);
         }
     }
 
@@ -352,6 +364,80 @@ public class MovementSystem extends IteratingSystem {
             // No food found, just stop and wait
             vel.velocity.set(0f, 0f);
         }
+    }
+
+    private void fleeFromPredator(Entity prey, float deltaTime) {
+        PositionComponent preyPos = prey.getComponent(PositionComponent.class);
+        VelocityComponent vel = prey.getComponent(VelocityComponent.class);
+        GenomeComponent dna = prey.getComponent(GenomeComponent.class);
+
+        Entity threateningPredator = findNearestVisiblePredator(prey);
+        if (threateningPredator == null) {
+            vel.velocity.set(0f, 0f);
+            return;
+        }
+
+        PositionComponent predatorPos = threateningPredator.getComponent(PositionComponent.class);
+        com.badlogic.gdx.math.Vector2 direction = new com.badlogic.gdx.math.Vector2(preyPos.position).sub(predatorPos.position).nor();
+        float speedMultiplier = (50f + (dna.genes[GenomeComponent.SPEED] * 200f)) * PREY_ESCAPE_SPEED_MULTIPLIER;
+        vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
+
+        updatePosition(preyPos, vel, deltaTime);
+        constrainPositionToBounds(preyPos);
+        updateVisionDirection(prey);
+    }
+
+
+    private Entity findNearestVisiblePredator(Entity prey) {
+        PositionComponent preyPos = prey.getComponent(PositionComponent.class);
+        VisionComponent vision = prey.getComponent(VisionComponent.class);
+        if (preyPos == null || vision == null) {
+            return null;
+        }
+
+        Entity nearestPredator = null;
+        float nearestDistance = Float.MAX_VALUE;
+
+        for (Entity candidate : getEngine().getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get())) {
+            PositionComponent candidatePos = candidate.getComponent(PositionComponent.class);
+            if (canSeeTarget(preyPos, vision, candidatePos)) {
+                float distance = preyPos.position.dst(candidatePos.position);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestPredator = candidate;
+                }
+            }
+        }
+
+        return nearestPredator;
+    }
+
+    private boolean canSeeTarget(PositionComponent observerPos, VisionComponent vision, PositionComponent targetPos) {
+        float observerCenterX = observerPos.position.x + (ENTITY_SIZE / 2f);
+        float observerCenterY = observerPos.position.y + (ENTITY_SIZE / 2f);
+        float targetCenterX = targetPos.position.x + (ENTITY_SIZE / 2f);
+        float targetCenterY = targetPos.position.y + (ENTITY_SIZE / 2f);
+
+        float dx = targetCenterX - observerCenterX;
+        float dy = targetCenterY - observerCenterY;
+        float distance = (float) Math.sqrt(dx * dx + dy * dy);
+        if (distance > vision.visionRange) {
+            return false;
+        }
+
+        float angleToTarget = (float) Math.toDegrees(Math.atan2(dy, dx));
+        float angleDifference = Math.abs(normalizeAngle(angleToTarget - vision.directionAngle));
+        return angleDifference <= vision.visionAngle / 2f;
+    }
+
+    private float normalizeAngle(float angle) {
+        float normalized = angle % 360f;
+        if (normalized < -180f) {
+            normalized += 360f;
+        } else if (normalized > 180f) {
+            normalized -= 360f;
+        }
+        return normalized;
     }
 
     private void moveTowardTarget(Entity entity, com.badlogic.gdx.math.Vector2 targetPoint, GenomeComponent dna) {

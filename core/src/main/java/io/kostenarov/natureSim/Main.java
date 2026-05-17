@@ -23,7 +23,9 @@ import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.BehaviourComponent;
 import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Components.ReproductionComponent;
+import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Systems.CameraSystem;
+import io.kostenarov.natureSim.Systems.PredatorSystem;
 import io.kostenarov.natureSim.Systems.MovementSystem;
 import io.kostenarov.natureSim.Systems.VisionRenderingSystem;
 import io.kostenarov.natureSim.Systems.FoodSourceSystem;
@@ -33,11 +35,11 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
     private Texture agentTexture;
+    private Texture predatorTexture;
     private Texture foodTexture;
     private Engine engine;
     private OrthographicCamera camera;
     private OrthographicCamera uiCamera;
-    private CameraSystem cameraSystem;
     private ShapeDrawer shapeDrawer;
     private Texture whitePixel;
     private BitmapFont font;
@@ -72,6 +74,7 @@ public class Main extends ApplicationAdapter {
 
     private void initTextures() {
         agentTexture = new Texture("agent.png");
+        predatorTexture = new Texture("agentPredator.png");
 
         // Create a simple green circle texture for food
         Pixmap foodPixmap = new Pixmap(16, 16, Pixmap.Format.RGBA8888);
@@ -110,8 +113,9 @@ public class Main extends ApplicationAdapter {
         engine = new Engine();
         engine.addSystem(new FoodSourceSystem());
         engine.addSystem(new MatingSystem());
+        engine.addSystem(new PredatorSystem());
         engine.addSystem(new MovementSystem());
-        cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        CameraSystem cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         engine.addSystem(cameraSystem);
         engine.addSystem(new VisionRenderingSystem(shapeDrawer, camera));
     }
@@ -128,6 +132,31 @@ public class Main extends ApplicationAdapter {
         createAgent(1500, 400, 120, 70f, 120f, 70f);
         createAgent(1100, 200, 110, 20f, 150f, 83f);
         createAgent(1000, 500, 140, 1200f, 112f, 90f);
+        createAgent(1200, 600, 130, 200f, 140f, 120f);
+        createAgent(1200, 700, 130, 200f, 140f, 120f);
+        createAgent(1200, 800, 130, 200f, 140f, 120f);
+        createPredator(2200, 900, 180, 0f, 240f, 140f);
+        createPredator(2500, 1200, 190, 180f, 260f, 150f);
+
+        for (int i = 0; i < 50; i++) {
+            float x = (float) Math.random() * 1800f + 200f;
+            float y = (float) Math.random() * 1800f + 200f;
+            float speed = 90f + (float) Math.random() * 120f;
+            float angle = (float) Math.random() * 360f;
+            float visionRange = 90f + (float) Math.random() * 140f;
+            float visionAngle = 70f + (float) Math.random() * 120f;
+            createAgent(x, y, speed, angle, visionRange, visionAngle);
+        }
+
+        for (int i = 0; i < 2; i++) {
+            float x = 2200f + (float) Math.random() * 700f;
+            float y = 900f + (float) Math.random() * 700f;
+            float speed = 170f + (float) Math.random() * 40f;
+            float angle = (float) Math.random() * 360f;
+            float visionRange = 220f + (float) Math.random() * 100f;
+            float visionAngle = 120f + (float) Math.random() * 40f;
+            createPredator(x, y, speed, angle, visionRange, visionAngle);
+        }
     }
 
     private void createAgent(float x, float y, float speed, float angle, float visionRange, float visionAngle) {
@@ -162,6 +191,50 @@ public class Main extends ApplicationAdapter {
         agent.add(reproduction);
 
         engine.addEntity(agent);
+    }
+
+    private void createPredator(float x, float y, float speed, float angle, float visionRange, float visionAngle) {
+        Entity predator = engine.createEntity();
+
+        PositionComponent pos = new PositionComponent();
+        pos.position.set(x, y);
+        predator.add(pos);
+
+        VelocityComponent vel = new VelocityComponent(speed);
+        vel.velocity.set(angle, angle);
+        predator.add(vel);
+
+        GenomeComponent dna = new GenomeComponent();
+        dna.genes[GenomeComponent.SPEED] = speed / 250f;
+        predator.add(dna);
+
+        GenderComponent gender = new GenderComponent();
+        predator.add(gender);
+
+        StatsComponent stats = new StatsComponent(100f, 100f, 100f, 100f);
+        predator.add(stats);
+
+        VisionComponent vision = new VisionComponent(visionRange, visionAngle);
+        predator.add(vision);
+
+        BehaviourComponent behaviour = new BehaviourComponent();
+        predator.add(behaviour);
+
+        ReproductionComponent reproduction = new ReproductionComponent();
+        predator.add(reproduction);
+
+        PredatorComponent predatorComponent = new PredatorComponent();
+        predatorComponent.attackRange = 30f;
+        predatorComponent.attackDamage = 40f;
+        predatorComponent.killEnergyGain = 45f;
+        predatorComponent.huntSpeedMultiplier = 1.35f;
+        predatorComponent.huntEnergyBufferMultiplier = 1.15f;
+        predatorComponent.scentRange = 420f;
+        predatorComponent.scentReachThreshold = 24f;
+        predatorComponent.scentSpeedMultiplier = 1.0f;
+        predator.add(predatorComponent);
+
+        engine.addEntity(predator);
     }
 
     @Override
@@ -236,6 +309,15 @@ public class Main extends ApplicationAdapter {
 
         batch.flush();
 
+        // Draw predator scent ranges / smell targets
+        for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get())) {
+            PositionComponent pos = entity.getComponent(PositionComponent.class);
+            PredatorComponent predator = entity.getComponent(PredatorComponent.class);
+            drawScentRange(pos.position.x + 16f, pos.position.y + 16f, predator);
+        }
+
+        batch.flush();
+
         // Draw food sources
         for (Entity entity : engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get())) {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
@@ -245,8 +327,15 @@ public class Main extends ApplicationAdapter {
         // Draw the agents
         for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).exclude(FoodSourceComponent.class).get())) {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
-            batch.draw(agentTexture, pos.position.x, pos.position.y);
+            if (entity.getComponent(io.kostenarov.natureSim.Components.PredatorComponent.class) != null) {
+                batch.setColor(Color.WHITE);
+                batch.draw(predatorTexture, pos.position.x, pos.position.y);
+            } else {
+                batch.setColor(Color.WHITE);
+                batch.draw(agentTexture, pos.position.x, pos.position.y);
+            }
         }
+        batch.setColor(Color.WHITE);
         batch.end();
     }
 
@@ -261,7 +350,7 @@ public class Main extends ApplicationAdapter {
     private void drawPopulationCounter() {
         // Count agents (entities with StatsComponent)
         int populationCount = 0;
-        for (Entity entity : engine.getEntitiesFor(Family.all(StatsComponent.class, GenomeComponent.class).get())) {
+        for (@SuppressWarnings("unused") Entity ignored : engine.getEntitiesFor(Family.all(StatsComponent.class, GenomeComponent.class).get())) {
             populationCount++;
         }
 
@@ -312,19 +401,18 @@ public class Main extends ApplicationAdapter {
         float panelWidth = 440f * widthScale;
         float panelHeight = 280f * heightScale;
         float padding = 20f * heightScale;
-        float x = padding;
         float topY = uiCamera.position.y + (uiCamera.viewportHeight / 2f);
         float y = topY - panelHeight - padding;
 
         Color panelBg = new Color(0.08f, 0.08f, 0.08f, 0.7f);
         Color panelBorder = new Color(0.6f, 0.6f, 0.6f, 0.8f);
 
-        shapeDrawer.filledRectangle(x, y, panelWidth, panelHeight, panelBg);
-        shapeDrawer.rectangle(x, y, panelWidth, panelHeight, panelBorder, 1f);
+        shapeDrawer.filledRectangle(padding, y, panelWidth, panelHeight, panelBg);
+        shapeDrawer.rectangle(padding, y, panelWidth, panelHeight, panelBorder, 1f);
 
         font.setColor(Color.WHITE);
         font.getData().setScale(2.5f * widthScale * heightScale); // Scale font based on current screen width
-        float textX = x + 10f;
+        float textX = padding + 10f;
         float textY = y + panelHeight - 10f;
 
         font.draw(batch, "STATS", textX, textY);
@@ -338,6 +426,8 @@ public class Main extends ApplicationAdapter {
         font.draw(batch, "Health: " + (int) stats.health, textX, textY);
         textY -= 40f * heightScale;
         font.draw(batch, "Gender: " + gender.gender, textX, textY);
+        textY -= 40f * heightScale;
+        font.draw(batch, "Role: " + (selectedEntity.getComponent(PredatorComponent.class) != null ? "Predator" : "Prey"), textX, textY);
         textY -= 40f * heightScale;
         font.draw(batch, "Speed: " + String.format("%.2f", selectedEntity.getComponent(GenomeComponent.class).genes[GenomeComponent.SPEED] * 250f), textX, textY);
         textY -= 40f * heightScale;
@@ -431,10 +521,64 @@ public class Main extends ApplicationAdapter {
         shapeDrawer.filledTriangle(x1, y1, x2, y2, x3, y3, color);
     }
 
+    private void drawScentRange(float centerX, float centerY, PredatorComponent predator) {
+        if (predator == null) {
+            return;
+        }
+
+        Color scentFillColor = new Color(1f, 0.1f, 0.1f, 0.10f);
+        Color scentOutlineColor = new Color(1f, 0.1f, 0.1f, 0.25f);
+
+        drawFilledCircle(centerX, centerY, predator.scentRange, scentFillColor);
+        drawCircleOutline(centerX, centerY, predator.scentRange, scentOutlineColor);
+
+        if (predator.hasScentTarget) {
+            Color targetColor = new Color(1f, 0.2f, 0.2f, 0.6f);
+            shapeDrawer.line(predator.scentTarget.x - 10f, predator.scentTarget.y - 10f, predator.scentTarget.x + 10f, predator.scentTarget.y + 10f, targetColor, 2f);
+            shapeDrawer.line(predator.scentTarget.x - 10f, predator.scentTarget.y + 10f, predator.scentTarget.x + 10f, predator.scentTarget.y - 10f, targetColor, 2f);
+        }
+    }
+
+    private void drawFilledCircle(float centerX, float centerY, float radius, Color color) {
+        int segments = 48;
+        float angleStep = 360f / segments;
+        float prevX = centerX + radius;
+        float prevY = centerY;
+
+        for (int i = 1; i <= segments; i++) {
+            float angle = angleStep * i;
+            float currentX = centerX + radius * (float) Math.cos(Math.toRadians(angle));
+            float currentY = centerY + radius * (float) Math.sin(Math.toRadians(angle));
+            drawFilledTriangle(centerX, centerY, prevX, prevY, currentX, currentY, color);
+            prevX = currentX;
+            prevY = currentY;
+        }
+    }
+
+    private void drawCircleOutline(float centerX, float centerY, float radius, Color color) {
+        int segments = 48;
+        float thickness = 1.5f;
+        float angleStep = 360f / segments;
+        float prevX = centerX + radius;
+        float prevY = centerY;
+
+        for (int i = 1; i <= segments; i++) {
+            float angle = angleStep * i;
+            float currentX = centerX + radius * (float) Math.cos(Math.toRadians(angle));
+            float currentY = centerY + radius * (float) Math.sin(Math.toRadians(angle));
+            shapeDrawer.line(prevX, prevY, currentX, currentY, color, thickness);
+            prevX = currentX;
+            prevY = currentY;
+        }
+    }
+
     @Override
     public void dispose() {
         batch.dispose();
         agentTexture.dispose();
+        if (predatorTexture != null) {
+            predatorTexture.dispose();
+        }
         if (foodTexture != null) {
             foodTexture.dispose();
         }

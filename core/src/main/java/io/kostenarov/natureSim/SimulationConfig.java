@@ -20,6 +20,7 @@ public class SimulationConfig {
     public float mutationAmount;      // Standard deviation of a mutation (genes range 0 to 2)
 
     // Simulation and display
+    public long seed;                 // Random seed: same seed + same settings gives the same run; 0 = random
     public boolean collisionEnabled;
     public boolean showVisionCones;
     public boolean showScentRanges;
@@ -39,6 +40,7 @@ public class SimulationConfig {
         matingCooldown = 10f;
         mutationRate = 0.15f;
         mutationAmount = 0.2f;
+        seed = 0;
         collisionEnabled = true;
         showVisionCones = true;
         showScentRanges = true;

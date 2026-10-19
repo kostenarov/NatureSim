@@ -1,6 +1,7 @@
 package io.kostenarov.natureSim.Components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 
 public class VelocityComponent implements Component {
@@ -11,7 +12,7 @@ public class VelocityComponent implements Component {
         }
 
     public VelocityComponent(float speed) {
-        float angle = (float) (Math.random() * 2 * Math.PI);
+        float angle = MathUtils.random(MathUtils.PI2);
         velocity.x = (float) Math.cos(angle) * speed;
         velocity.y = (float) Math.sin(angle) * speed;
     }

@@ -1,6 +1,7 @@
 package io.kostenarov.natureSim.Components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.gdx.math.MathUtils;
 
 public class GenomeComponent implements Component {
     // What each gene does, and what it costs, is defined in Traits.
@@ -18,7 +19,7 @@ public class GenomeComponent implements Component {
 
     public GenomeComponent() {
         for (int i = 0; i < genes.length; i++) {
-            genes[i] = (float) Math.random() * 2;
+            genes[i] = MathUtils.random(0f, 2f);
         }
     }
 

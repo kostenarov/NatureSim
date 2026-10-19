@@ -16,6 +16,7 @@ import com.kotcrab.vis.ui.widget.VisLabel;
 import com.kotcrab.vis.ui.widget.VisSlider;
 import com.kotcrab.vis.ui.widget.VisTable;
 import com.kotcrab.vis.ui.widget.VisTextButton;
+import com.kotcrab.vis.ui.widget.VisTextField;
 
 /**
  * Settings screen shown before a run: tweak the {@link SimulationConfig}, then start the simulation.
@@ -71,6 +72,7 @@ public class StartScreen extends ScreenAdapter {
         addSlider(root, "Mutation size", 0f, 1f, 0.05f, config.mutationAmount, "%.2f", v -> config.mutationAmount = v);
 
         addSection(root, "Simulation & display");
+        addSeedField(root);
         addCheckBox(root, "Creature collision", config.collisionEnabled, v -> config.collisionEnabled = v);
         addCheckBox(root, "Show vision cones (slow with many creatures)", config.showVisionCones, v -> config.showVisionCones = v);
         addCheckBox(root, "Show predator scent ranges", config.showScentRanges, v -> config.showScentRanges = v);
@@ -126,6 +128,25 @@ public class StartScreen extends ScreenAdapter {
         table.add(new VisLabel(name)).left().minWidth(320f);
         table.add(slider).width(SLIDER_WIDTH);
         table.add(valueLabel).width(VALUE_WIDTH).right().row();
+    }
+
+    /** Same seed + same settings replays the same run; 0 picks a new seed each time. */
+    private void addSeedField(VisTable table) {
+        VisTextField seedField = new VisTextField(config.seed == 0 ? "" : Long.toString(config.seed));
+        seedField.setMessageText("random");
+        seedField.setMaxLength(9);
+        seedField.setTextFieldFilter(new VisTextField.TextFieldFilter.DigitsOnlyFilter());
+        seedField.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                String text = seedField.getText();
+                config.seed = text.isEmpty() ? 0 : Long.parseLong(text);
+            }
+        });
+
+        table.add(new VisLabel("Seed (empty = random)")).left().minWidth(320f);
+        table.add(seedField).width(SLIDER_WIDTH).left();
+        table.add().row();
     }
 
     private void addCheckBox(VisTable table, String name, boolean checked, ToggleSetter setter) {

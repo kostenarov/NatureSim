@@ -5,6 +5,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
+import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
@@ -18,8 +19,8 @@ public class SpatialIndexSystem extends EntitySystem {
     private static final float CREATURE_CELL_SIZE = 64f;
     private static final float FOOD_CELL_SIZE = 128f;
 
-    private final SpatialGrid creatures = new SpatialGrid(CREATURE_CELL_SIZE, MovementSystem.getMapMaxX(), MovementSystem.getMapMaxY());
-    private final SpatialGrid food = new SpatialGrid(FOOD_CELL_SIZE, MovementSystem.getMapMaxX(), MovementSystem.getMapMaxY());
+    private final SpatialGrid creatures = new SpatialGrid(CREATURE_CELL_SIZE, World.WIDTH, World.HEIGHT);
+    private final SpatialGrid food = new SpatialGrid(FOOD_CELL_SIZE, World.WIDTH, World.HEIGHT);
     private ImmutableArray<Entity> creatureEntities;
     private ImmutableArray<Entity> foodEntities;
 

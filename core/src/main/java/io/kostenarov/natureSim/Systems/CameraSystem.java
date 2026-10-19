@@ -7,6 +7,7 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 
@@ -19,9 +20,6 @@ public class CameraSystem extends EntitySystem {
     private float cameraSpeed = 400f; // Speed of manual camera movement in pixels/second
     private boolean autoFollowEnabled = true; // Toggle between auto-follow and manual control
 
-    // Map boundaries
-    private static final float MAP_MAX_X = MovementSystem.getMapMaxX();
-    private static final float MAP_MAX_Y = MovementSystem.getMapMaxY();
 
     public CameraSystem(OrthographicCamera camera, float viewportWidth, float viewportHeight) {
         this.camera = camera;
@@ -57,8 +55,8 @@ public class CameraSystem extends EntitySystem {
             float newCameraY = camera.position.y + (targetY - camera.position.y) * cameraSmoothness;
 
             // Clamp camera position to keep it within map bounds
-            newCameraX = Math.max(viewportWidth / 2, Math.min(MAP_MAX_X - viewportWidth / 2, newCameraX));
-            newCameraY = Math.max(viewportHeight / 2, Math.min(MAP_MAX_Y - viewportHeight / 2, newCameraY));
+            newCameraX = Math.max(viewportWidth / 2, Math.min(World.WIDTH - viewportWidth / 2, newCameraX));
+            newCameraY = Math.max(viewportHeight / 2, Math.min(World.HEIGHT - viewportHeight / 2, newCameraY));
 
             camera.position.x = newCameraX;
             camera.position.y = newCameraY;
@@ -99,8 +97,8 @@ public class CameraSystem extends EntitySystem {
         }
 
         // Clamp camera position to keep it within map bounds
-        camera.position.x = Math.max(viewportWidth / 2, Math.min(MAP_MAX_X - viewportWidth / 2, camera.position.x));
-        camera.position.y = Math.max(viewportHeight / 2, Math.min(MAP_MAX_Y - viewportHeight / 2, camera.position.y));
+        camera.position.x = Math.max(viewportWidth / 2, Math.min(World.WIDTH - viewportWidth / 2, camera.position.x));
+        camera.position.y = Math.max(viewportHeight / 2, Math.min(World.HEIGHT - viewportHeight / 2, camera.position.y));
     }
 
     public void setTargetEntity(Entity entity) {

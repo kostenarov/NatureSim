@@ -8,6 +8,7 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
+import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 
@@ -22,7 +23,6 @@ public class CollisionSystem extends EntitySystem {
     private static final float RADIUS = 13f;
     private static final float MIN_DISTANCE = RADIUS * 2f;
     private static final float CELL_SIZE = MIN_DISTANCE; // Any overlapping pair is at most one cell apart
-    private static final float ENTITY_SIZE = 32f;
     private static final int SOLVER_PASSES = 4; // Extra passes let tight crowds settle within a few frames
 
     private final ComponentMapper<PositionComponent> positionMapper = ComponentMapper.getFor(PositionComponent.class);
@@ -38,8 +38,8 @@ public class CollisionSystem extends EntitySystem {
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
         bodies = engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get());
-        columns = (int) Math.ceil(MovementSystem.getMapMaxX() / CELL_SIZE);
-        rows = (int) Math.ceil(MovementSystem.getMapMaxY() / CELL_SIZE);
+        columns = (int) Math.ceil(World.WIDTH / CELL_SIZE);
+        rows = (int) Math.ceil(World.HEIGHT / CELL_SIZE);
         cellHead = new int[columns * rows];
     }
 
@@ -127,8 +127,8 @@ public class CollisionSystem extends EntitySystem {
     }
 
     private void clampToMap(Vector2 position) {
-        position.x = MathUtils.clamp(position.x, 0f, MovementSystem.getMapMaxX() - ENTITY_SIZE);
-        position.y = MathUtils.clamp(position.y, 0f, MovementSystem.getMapMaxY() - ENTITY_SIZE);
+        position.x = MathUtils.clamp(position.x, 0f, World.WIDTH - World.CREATURE_SIZE);
+        position.y = MathUtils.clamp(position.y, 0f, World.HEIGHT - World.CREATURE_SIZE);
     }
 
     private int columnOf(float x) {

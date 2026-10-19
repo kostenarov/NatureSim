@@ -9,7 +9,7 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Array;
 import io.kostenarov.natureSim.Components.*;
 import io.kostenarov.natureSim.SimulationConfig;
-import io.kostenarov.natureSim.Traits;
+import io.kostenarov.natureSim.Creatures;
 
 public class MatingSystem extends EntitySystem {
     private ImmutableArray<Entity> matingEntities;
@@ -97,7 +97,7 @@ public class MatingSystem extends EntitySystem {
                 }
 
                 // Predators only mate with predators, prey only with prey.
-                if (isPredator(entity1) != isPredator(entity2)) {
+                if (Creatures.isPredator(entity1) != Creatures.isPredator(entity2)) {
                     continue;
                 }
 
@@ -128,16 +128,6 @@ public class MatingSystem extends EntitySystem {
     }
 
     private void createOffspring(Entity parent1, Entity parent2) {
-        Entity offspring = engine.createEntity();
-
-        // Inherit position (near parent 1)
-        PositionComponent parentPos = parent1.getComponent(PositionComponent.class);
-        PositionComponent offspringPos = new PositionComponent();
-        float offsetX = MathUtils.random(-20f, 20f);
-        float offsetY = MathUtils.random(-20f, 20f);
-        offspringPos.position.set(parentPos.position.x + offsetX, parentPos.position.y + offsetY);
-        offspring.add(offspringPos);
-
         // Each gene comes whole from one parent (averaging would shrink variation every generation),
         // then may mutate by a normally distributed amount.
         GenomeComponent parent1Dna = parent1.getComponent(GenomeComponent.class);
@@ -154,40 +144,24 @@ public class MatingSystem extends EntitySystem {
 
             offspringDna.genes[i] = gene;
         }
-        offspring.add(offspringDna);
 
-        GenderComponent offspringGender = new GenderComponent();
-        offspring.add(offspringGender);
+        // Born next to parent 1
+        PositionComponent parentPos = parent1.getComponent(PositionComponent.class);
+        Entity offspring = Creatures.create(engine,
+            parentPos.position.x + MathUtils.random(-20f, 20f),
+            parentPos.position.y + MathUtils.random(-20f, 20f),
+            offspringDna);
 
-        // Initial stats (healthy and hungry)
-        StatsComponent offspringStats = new StatsComponent();
-        offspringStats.energy = 50f;    // Start with medium energy
-        offspringStats.hunger = 50f;    // Start hungry to encourage foraging
+        // Newborns start half fed and a little frail
+        StatsComponent offspringStats = offspring.getComponent(StatsComponent.class);
+        offspringStats.energy = 50f;
+        offspringStats.hunger = 50f;
         offspringStats.thirst = 50f;
         offspringStats.health = 80f;
-        offspring.add(offspringStats);
-
-        // Vision comes from the offspring's own genes
-        offspring.add(new VisionComponent(Traits.visionRange(offspringDna), Traits.visionAngle(offspringDna)));
-
-        // Behaviour component
-        BehaviourComponent offspringBehaviour = new BehaviourComponent();
-        offspring.add(offspringBehaviour);
-
-        // Velocity component
-        VelocityComponent offspringVel = new VelocityComponent();
-        offspring.add(offspringVel);
-
-        // Reproduction component
-        ReproductionComponent offspringRepro = new ReproductionComponent();
-        offspring.add(offspringRepro);
 
         // Predator parents produce predator offspring
-        PredatorComponent parentPredator = parent1.getComponent(PredatorComponent.class);
-        if (parentPredator != null) {
-            PredatorComponent offspringPredator = new PredatorComponent(parentPredator);
-            offspringPredator.scentRange = Traits.scentRange(offspringDna);
-            offspring.add(offspringPredator);
+        if (Creatures.isPredator(parent1)) {
+            Creatures.makePredator(offspring);
         }
 
         engine.addEntity(offspring);
@@ -198,10 +172,6 @@ public class MatingSystem extends EntitySystem {
         return stats.energy >= ReproductionComponent.MATING_ENERGY_COST
             && stats.hunger >= ReproductionComponent.MATING_MIN_HUNGER
             && stats.thirst >= ReproductionComponent.MATING_MIN_THIRST;
-    }
-
-    private boolean isPredator(Entity entity) {
-        return entity.getComponent(PredatorComponent.class) != null;
     }
 }
 

@@ -7,6 +7,7 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
+import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
@@ -26,7 +27,6 @@ public class WaterSourceSystem extends EntitySystem {
     public static final float WATER_FULL_THRESHOLD = 98f;  // Stop drinking once thirst is back above this
     public static final float DRINK_RATE_PER_SEC = 25f;    // Thirst restored per second while drinking
     private static final float DRINK_MARGIN = 24f;         // How far outside the shore a creature can still drink
-    private static final float CREATURE_HALF_SIZE = 16f;
 
     private final int pondCount;
     private ImmutableArray<Entity> ponds;
@@ -50,8 +50,8 @@ public class WaterSourceSystem extends EntitySystem {
     }
 
     private void spawnPond(Engine engine) {
-        float mapMaxX = MovementSystem.getMapMaxX();
-        float mapMaxY = MovementSystem.getMapMaxY();
+        float mapMaxX = World.WIDTH;
+        float mapMaxY = World.HEIGHT;
         float radius = MathUtils.random(MIN_POND_RADIUS, MAX_POND_RADIUS);
 
         for (int attempt = 0; attempt < MAX_PLACEMENT_ATTEMPTS; attempt++) {
@@ -82,8 +82,8 @@ public class WaterSourceSystem extends EntitySystem {
 
     /** Nearest pond by distance to its shore, or null if the map has no water. */
     public static Entity findNearestWater(ImmutableArray<Entity> ponds, PositionComponent creaturePos) {
-        float centerX = creaturePos.position.x + CREATURE_HALF_SIZE;
-        float centerY = creaturePos.position.y + CREATURE_HALF_SIZE;
+        float centerX = creaturePos.position.x + World.CREATURE_HALF_SIZE;
+        float centerY = creaturePos.position.y + World.CREATURE_HALF_SIZE;
 
         Entity nearest = null;
         float nearestShoreDistance = Float.MAX_VALUE;
@@ -102,14 +102,14 @@ public class WaterSourceSystem extends EntitySystem {
     public static boolean canDrinkFrom(Entity pond, PositionComponent creaturePos) {
         PositionComponent pondPos = pond.getComponent(PositionComponent.class);
         float radius = pond.getComponent(WaterSourceComponent.class).radius;
-        float distance = pondPos.position.dst(creaturePos.position.x + CREATURE_HALF_SIZE, creaturePos.position.y + CREATURE_HALF_SIZE);
+        float distance = pondPos.position.dst(creaturePos.position.x + World.CREATURE_HALF_SIZE, creaturePos.position.y + World.CREATURE_HALF_SIZE);
         return distance <= radius + DRINK_MARGIN;
     }
 
     /** Where a creature's PositionComponent should head to reach the pond (aims its center at the pond center). */
     public static Vector2 approachPoint(Entity pond, Vector2 out) {
         PositionComponent pondPos = pond.getComponent(PositionComponent.class);
-        return out.set(pondPos.position.x - CREATURE_HALF_SIZE, pondPos.position.y - CREATURE_HALF_SIZE);
+        return out.set(pondPos.position.x - World.CREATURE_HALF_SIZE, pondPos.position.y - World.CREATURE_HALF_SIZE);
     }
 
     public static void drink(StatsComponent stats, float deltaTime) {

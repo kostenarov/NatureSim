@@ -6,14 +6,13 @@ import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
+import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
 import io.kostenarov.natureSim.SimulationConfig;
 
 public class FoodSourceSystem extends EntitySystem {
-    private static final float MAP_MAX_X = 5120;
-    private static final float MAP_MAX_Y = 5120;
     private static final float FOOD_SIZE = 16f;
     private static final float NEAR_WATER_CHANCE = 0.7f;      // Most food grows in the fertile band around ponds
     private static final float FERTILE_BAND_WIDTH = 350f;     // How far from the shore that band reaches
@@ -78,13 +77,13 @@ public class FoodSourceSystem extends EntitySystem {
             float distance = pond.getComponent(WaterSourceComponent.class).radius + MathUtils.random(0f, FERTILE_BAND_WIDTH);
             float angle = MathUtils.random(MathUtils.PI2);
             pos.position.set(
-                MathUtils.clamp(pondPos.position.x + MathUtils.cos(angle) * distance, 0, MAP_MAX_X - FOOD_SIZE),
-                MathUtils.clamp(pondPos.position.y + MathUtils.sin(angle) * distance, 0, MAP_MAX_Y - FOOD_SIZE)
+                MathUtils.clamp(pondPos.position.x + MathUtils.cos(angle) * distance, 0, World.WIDTH - FOOD_SIZE),
+                MathUtils.clamp(pondPos.position.y + MathUtils.sin(angle) * distance, 0, World.HEIGHT - FOOD_SIZE)
             );
         } else {
             pos.position.set(
-                MathUtils.random(0, MAP_MAX_X - FOOD_SIZE),
-                MathUtils.random(0, MAP_MAX_Y - FOOD_SIZE)
+                MathUtils.random(0, World.WIDTH - FOOD_SIZE),
+                MathUtils.random(0, World.HEIGHT - FOOD_SIZE)
             );
         }
         food.add(pos);

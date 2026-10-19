@@ -48,6 +48,9 @@ public class PredatorSystem extends CreatureSystem {
             return;
         }
         super.processEntity(entity, deltaTime);
+        if (entity.getComponent(BehaviourComponent.class).exhausted) {
+            clearScentTarget(predator); // The trail goes cold while it recovers
+        }
     }
 
     @Override
@@ -57,13 +60,7 @@ public class PredatorSystem extends CreatureSystem {
         PredatorComponent predator = entity.getComponent(PredatorComponent.class);
         GenomeComponent dna = entity.getComponent(GenomeComponent.class);
 
-        // Once resting, keep resting until energy has recovered.
-        boolean resting = behaviour.behaviour == EntityBehaviour.IDLE && stats.energy < ENERGY_RESUME_THRESHOLD;
-        if (resting || stats.energy <= ENERGY_STOP_THRESHOLD) {
-            clearScentTarget(predator);
-            return EntityBehaviour.IDLE;
-        }
-
+        // (Running out of energy is handled before any decision: see CreatureSystem.)
         boolean hungry = isHungry(stats, predator);
         if (wantsWater(stats, behaviour, dna, hungry)) {
             clearScentTarget(predator);

@@ -26,9 +26,9 @@ import io.kostenarov.natureSim.World;
  * Hunger, thirst and energy upkeep is handled separately by {@link MetabolismSystem}.
  */
 public abstract class CreatureSystem extends IteratingSystem {
-    // Hysteresis: creatures hard-stop at low energy and only move again after recharging.
-    protected static final float ENERGY_STOP_THRESHOLD = 3f;
-    protected static final float ENERGY_RESUME_THRESHOLD = 30f;
+    // A creature that runs out of energy collapses and rests, whatever else it needs, until it has
+    // recovered this much. Without the gap it would stagger: one step, out of energy, one step...
+    public static final float EXHAUSTION_RECOVERY_THRESHOLD = 30f;
     // With nothing else to do, a resting creature stays put until this fresh
     protected static final float IDLE_RESUME_THRESHOLD = 80f;
     // How far from a pond's shore still counts as "at the waterhole" (matches the band where food grows)
@@ -55,8 +55,27 @@ public abstract class CreatureSystem extends IteratingSystem {
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
         BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
+        if (isExhausted(entity, behaviour)) {
+            behaviour.behaviour = EntityBehaviour.IDLE;
+            stop(entity);
+            return;
+        }
         behaviour.behaviour = decideBehaviour(entity);
         executeBehaviour(entity, behaviour.behaviour, deltaTime);
+    }
+
+    /**
+     * Out of energy: the creature rests no matter how hungry, thirsty or threatened it is, and stays down
+     * until its energy is back up to {@link #EXHAUSTION_RECOVERY_THRESHOLD}.
+     */
+    private static boolean isExhausted(Entity entity, BehaviourComponent behaviour) {
+        float energy = entity.getComponent(StatsComponent.class).energy;
+        if (energy <= 0f) {
+            behaviour.exhausted = true;
+        } else if (behaviour.exhausted && energy >= EXHAUSTION_RECOVERY_THRESHOLD) {
+            behaviour.exhausted = false;
+        }
+        return behaviour.exhausted;
     }
 
     protected abstract EntityBehaviour decideBehaviour(Entity entity);
@@ -74,14 +93,11 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     /**
      * With no needs to meet, rest until fairly fresh instead of wandering: wandering burns the energy that
-     * breeding needs. A creature that is already up keeps wandering until it is properly tired.
+     * breeding needs. A creature that is already up keeps wandering (until exhaustion stops it).
      */
     protected EntityBehaviour restOrWander(StatsComponent stats, BehaviourComponent behaviour) {
         boolean resting = behaviour.behaviour == EntityBehaviour.IDLE;
-        if (resting ? stats.energy < IDLE_RESUME_THRESHOLD : stats.energy <= ENERGY_STOP_THRESHOLD) {
-            return EntityBehaviour.IDLE;
-        }
-        return EntityBehaviour.EXPLORING;
+        return resting && stats.energy < IDLE_RESUME_THRESHOLD ? EntityBehaviour.IDLE : EntityBehaviour.EXPLORING;
     }
 
     // --- Actions ----------------------------------------------------------------------------------------

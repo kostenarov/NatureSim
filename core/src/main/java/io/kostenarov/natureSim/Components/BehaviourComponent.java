@@ -6,6 +6,7 @@ import io.kostenarov.natureSim.Enums.EntityBehaviour;
 
 public class BehaviourComponent implements Component {
     public EntityBehaviour behaviour = EntityBehaviour.IDLE;
+    public boolean exhausted = false; // Ran out of energy; rests until recovered (see CreatureSystem)
     public float directionAngle = 0;
 
     // Target point for wandering

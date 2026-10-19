@@ -52,14 +52,7 @@ public class PreySystem extends CreatureSystem {
             return EntityBehaviour.SEEKING_FOOD;
         }
 
-        // Once resting, keep resting until energy has recovered; once active, rest when nearly exhausted.
-        if (behaviour.behaviour == EntityBehaviour.IDLE && stats.energy < ENERGY_RESUME_THRESHOLD) {
-            return EntityBehaviour.IDLE;
-        }
-        if (stats.energy <= ENERGY_STOP_THRESHOLD) {
-            return EntityBehaviour.IDLE;
-        }
-
+        // (Running out of energy is handled before any decision: see CreatureSystem.)
         // Adults ready to breed go courting (toward a partner in sight, or to a waterhole to find one)
         if (MatingSystem.isReadyToMate(entity)) {
             return EntityBehaviour.SEEKING_MATE;

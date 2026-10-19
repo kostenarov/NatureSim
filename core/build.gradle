@@ -19,4 +19,23 @@ dependencies {
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }
+
+  testImplementation platform("org.junit:junit-bom:$junitVersion")
+  testImplementation 'org.junit.jupiter:junit-jupiter'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Headless simulation tests. Tests tagged "slow" (long evolution runs) are skipped by default;
+// run them with: gradle core:test -PincludeSlow
+test {
+  useJUnitPlatform {
+    if(!project.hasProperty('includeSlow')) {
+      excludeTags 'slow'
+    }
+  }
+  maxHeapSize = '1g'
+  testLogging {
+    events 'passed', 'skipped', 'failed'
+    exceptionFormat = 'full'
+  }
 }

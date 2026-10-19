@@ -1,6 +1,8 @@
 package io.kostenarov.natureSim;
 
 import com.badlogic.gdx.Game;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.Screen;
 import com.kotcrab.vis.ui.VisUI;
 
@@ -9,10 +11,14 @@ import com.kotcrab.vis.ui.VisUI;
  */
 public class Main extends Game {
     private final SimulationConfig config = new SimulationConfig();
+    private Preferences settings;
 
     @Override
     public void create() {
         VisUI.load(VisUI.SkinScale.X2);
+        // The start screen remembers the last settings used
+        settings = Gdx.app.getPreferences("NatureSim");
+        config.load(settings);
         showStartScreen();
     }
 
@@ -21,6 +27,7 @@ public class Main extends Game {
     }
 
     public void startSimulation() {
+        config.save(settings);
         switchTo(new SimulationScreen(this, config));
     }
 

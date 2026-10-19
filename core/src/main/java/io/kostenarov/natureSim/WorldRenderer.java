@@ -14,6 +14,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Disposable;
 import io.kostenarov.natureSim.Components.FoodSourceComponent;
+import io.kostenarov.natureSim.Components.GenomeComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
@@ -55,6 +56,9 @@ public class WorldRenderer implements Disposable {
     private final ImmutableArray<Entity> predators;
     private final ImmutableArray<Entity> food;
     private final ImmutableArray<Entity> creatures;
+
+    private int tintGene = -1;
+    private final Color tint = new Color(1f, 1f, 1f, 1f);
 
     // The part of the world the camera shows this frame
     private float visibleLeft;
@@ -199,10 +203,25 @@ public class WorldRenderer implements Disposable {
         for (Entity creature : creatures) {
             PositionComponent pos = creature.getComponent(PositionComponent.class);
             if (isVisible(pos.position.x, pos.position.y, World.CREATURE_SIZE)) {
+                if (tintGene >= 0) {
+                    batch.setColor(geneColor(creature.getComponent(GenomeComponent.class).genes[tintGene]));
+                }
                 Texture texture = Creatures.isPredator(creature) ? predatorTexture : preyTexture;
                 batch.draw(texture, pos.position.x, pos.position.y);
             }
         }
+        batch.setColor(Color.WHITE);
+    }
+
+    /** Blue for a gene of 0, through green, to red for 2. */
+    private Color geneColor(float gene) {
+        float hue = 240f * (1f - MathUtils.clamp(gene / 2f, 0f, 1f));
+        return tint.fromHsv(hue, 0.85f, 1f);
+    }
+
+    /** Colors creatures by this gene (a GenomeComponent index), or -1 for their normal look. */
+    public void setTintGene(int gene) {
+        tintGene = gene;
     }
 
     // --- Shapes -----------------------------------------------------------------------------------------

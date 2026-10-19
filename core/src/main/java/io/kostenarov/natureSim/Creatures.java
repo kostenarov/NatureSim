@@ -3,6 +3,7 @@ package io.kostenarov.natureSim;
 import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.MathUtils;
+import io.kostenarov.natureSim.Components.AgeComponent;
 import io.kostenarov.natureSim.Components.BehaviourComponent;
 import io.kostenarov.natureSim.Components.GenderComponent;
 import io.kostenarov.natureSim.Components.GenomeComponent;
@@ -42,6 +43,7 @@ public final class Creatures {
         creature.add(behaviour);
 
         creature.add(new ReproductionComponent());
+        creature.add(new AgeComponent());
         return creature;
     }
 

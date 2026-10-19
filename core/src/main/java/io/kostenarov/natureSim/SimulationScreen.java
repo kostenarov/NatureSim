@@ -18,26 +18,19 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.ScreenUtils;
+import com.kotcrab.vis.ui.VisUI;
+import io.kostenarov.natureSim.Components.AgeComponent;
 import io.kostenarov.natureSim.Components.BehaviourComponent;
 import io.kostenarov.natureSim.Components.GenderComponent;
 import io.kostenarov.natureSim.Components.GenomeComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
-import io.kostenarov.natureSim.Systems.CameraSystem;
-import io.kostenarov.natureSim.Systems.CollisionSystem;
-import io.kostenarov.natureSim.Systems.DeathSystem;
-import io.kostenarov.natureSim.Systems.FoodSourceSystem;
-import io.kostenarov.natureSim.Systems.MatingSystem;
-import io.kostenarov.natureSim.Systems.MetabolismSystem;
-import io.kostenarov.natureSim.Systems.PredatorSystem;
-import io.kostenarov.natureSim.Systems.PreySystem;
-import io.kostenarov.natureSim.Systems.SpatialIndexSystem;
-import io.kostenarov.natureSim.Systems.WaterSourceSystem;
+import io.kostenarov.natureSim.Systems.PopulationHistory;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
 /**
  * Runs one simulation built from a {@link SimulationConfig}: steps the engine at a fixed rate,
- * handles input and draws the on-screen panel. The world itself is drawn by {@link WorldRenderer}.
+ * handles input and draws the on-screen panels. The world itself is drawn by {@link WorldRenderer}.
  * Esc returns to the start screen.
  */
 public class SimulationScreen extends ScreenAdapter {
@@ -47,39 +40,40 @@ public class SimulationScreen extends ScreenAdapter {
     private static final int MAX_STEPS_PER_FRAME = 40;
     private static final float[] SPEEDS = {1f, 2f, 5f, 10f, 20f}; // Keys 1-5
 
-    // The stats panel was laid out for this window size and scales from it
-    private static final float DESIGN_WIDTH = 2560f;
-    private static final float DESIGN_HEIGHT = 1440f;
+    private static final float MARGIN = 20f;
+    private static final String CONTROLS =
+        "Esc: settings   P: pause   1-5: speed   G: graphs   T: tint by gene   WASD: move   Q/E: zoom   Click: inspect & follow   Space: follow on/off";
 
     private final Main game;
-    private final SimulationConfig config;
     private final long seed;
 
     private final SpriteBatch batch = new SpriteBatch();
     private final Texture whitePixel;
     private final ShapeDrawer shapeDrawer;
-    private final BitmapFont font = new BitmapFont();
+    private final BitmapFont font = VisUI.getSkin().getFont("default-font"); // Owned by VisUI, not disposed here
     private final OrthographicCamera camera;
     private final OrthographicCamera uiCamera;
-    private final Engine engine = new Engine();
-    private final CameraSystem cameraSystem;
+    private final Engine engine;
+    private final CameraController cameraController;
     private final WorldRenderer worldRenderer;
+    private final GraphRenderer graphRenderer;
+    private final PopulationHistory history;
     private final ImmutableArray<Entity> creatures;
 
-    private final Color panelBg = new Color(0.08f, 0.08f, 0.08f, 0.7f);
+    private final Color panelBg = new Color(0.08f, 0.08f, 0.08f, 0.75f);
     private final Color panelBorder = new Color(0.6f, 0.6f, 0.6f, 0.8f);
     private final Vector3 touchPoint = new Vector3();
 
     private int speedIndex = 0;
     private boolean paused = false;
     private float accumulator = 0f;
+    private boolean showGraphs = false;
+    private boolean showPredatorGenes = false;
+    private int tintGene = -1;
     private Entity selectedEntity;
-    private float currentScreenWidth = DESIGN_WIDTH;
-    private float currentScreenHeight = DESIGN_HEIGHT;
 
     public SimulationScreen(Main game, SimulationConfig config) {
         this.game = game;
-        this.config = config;
 
         // Same seed + same settings = same run. 0 means "pick one", and the HUD shows which was used.
         seed = config.seed != 0 ? config.seed : MathUtils.random(1, 999_999);
@@ -94,37 +88,11 @@ public class SimulationScreen extends ScreenAdapter {
 
         camera = createCenteredCamera();
         uiCamera = createCenteredCamera();
+        cameraController = new CameraController(camera);
 
-        buildEngine();
-        // Not added to the engine: the camera runs on real time, outside the fixed simulation steps.
-        cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        engine = Simulation.createEngine(config);
+        history = engine.getSystem(PopulationHistory.class);
         creatures = engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get());
-        spawnStartingCreatures();
-
-        worldRenderer = new WorldRenderer(batch, shapeDrawer, engine, config);
-    }
-
-    private static OrthographicCamera createCenteredCamera() {
-        OrthographicCamera camera = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(Gdx.graphics.getWidth() / 2f, Gdx.graphics.getHeight() / 2f, 0);
-        camera.update();
-        return camera;
-    }
-
-    private void buildEngine() {
-        engine.addSystem(new SpatialIndexSystem()); // Always runs first each step
-        engine.addSystem(new WaterSourceSystem(config)); // Ponds before food: food grows around them
-        engine.addSystem(new FoodSourceSystem(config));
-        engine.addSystem(new MatingSystem(config));
-        engine.addSystem(new PredatorSystem());
-        engine.addSystem(new PreySystem());
-        engine.addSystem(new MetabolismSystem()); // After behaviour: upkeep depends on what creatures did
-        if (config.collisionEnabled) {
-            engine.addSystem(new CollisionSystem());
-        }
-        engine.addSystem(new DeathSystem());
-
-        // Drop the stats panel when the selected creature dies.
         engine.addEntityListener(new EntityListener() {
             @Override
             public void entityAdded(Entity entity) {
@@ -132,34 +100,26 @@ public class SimulationScreen extends ScreenAdapter {
 
             @Override
             public void entityRemoved(Entity entity) {
+                // Drop the stats panel and stop following when the selected creature dies.
                 if (entity == selectedEntity) {
                     selectedEntity = null;
                 }
+                if (entity == cameraController.getTarget()) {
+                    cameraController.follow(null);
+                }
             }
         });
+        Simulation.spawnStartingCreatures(engine, config);
+
+        worldRenderer = new WorldRenderer(batch, shapeDrawer, engine, config);
+        graphRenderer = new GraphRenderer(batch, shapeDrawer, font);
     }
 
-    private void spawnStartingCreatures() {
-        float spawnMin = 200f;
-        float spawnMax = World.WIDTH - spawnMin;
-
-        // Starting gene ranges keep the first generation close to the old hand-tuned creatures;
-        // all other genes are random (0 to 2) and evolution takes it from there.
-        for (int i = 0; i < config.preyCount; i++) {
-            GenomeComponent dna = new GenomeComponent();
-            dna.genes[GenomeComponent.SPEED] = MathUtils.random(0.35f, 0.85f);   // ~120-220 px/s
-            dna.genes[GenomeComponent.VISION] = MathUtils.random(0.1f, 1.4f);    // ~90-235 px
-            engine.addEntity(Creatures.create(engine, MathUtils.random(spawnMin, spawnMax), MathUtils.random(spawnMin, spawnMax), dna));
-        }
-
-        for (int i = 0; i < config.predatorCount; i++) {
-            GenomeComponent dna = new GenomeComponent();
-            dna.genes[GenomeComponent.SPEED] = MathUtils.random(0.7f, 0.85f);    // ~190-220 px/s
-            dna.genes[GenomeComponent.VISION] = MathUtils.random(1.3f, 2f);      // ~225-300 px
-            Entity predator = Creatures.create(engine, MathUtils.random(spawnMin, spawnMax), MathUtils.random(spawnMin, spawnMax), dna);
-            Creatures.makePredator(predator);
-            engine.addEntity(predator);
-        }
+    private static OrthographicCamera createCenteredCamera() {
+        OrthographicCamera camera = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        camera.position.set(Gdx.graphics.getWidth() / 2f, Gdx.graphics.getHeight() / 2f, 0);
+        camera.update();
+        return camera;
     }
 
     @Override
@@ -186,10 +146,10 @@ public class SimulationScreen extends ScreenAdapter {
 
     private void update() {
         float realDelta = Math.min(Gdx.graphics.getDeltaTime(), MAX_FRAME_TIME);
-        handleSpeedKeys();
+        handleKeys();
 
         // The camera follows real time so it stays responsive while the simulation is paused or sped up.
-        cameraSystem.update(realDelta);
+        cameraController.update(realDelta);
 
         // Fixed-size simulation steps: results don't depend on frame rate, and speed-up just runs more steps.
         if (!paused) {
@@ -210,7 +170,7 @@ public class SimulationScreen extends ScreenAdapter {
         }
     }
 
-    private void handleSpeedKeys() {
+    private void handleKeys() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.P)) {
             paused = !paused;
         }
@@ -220,8 +180,20 @@ public class SimulationScreen extends ScreenAdapter {
                 paused = false;
             }
         }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) {
+            showGraphs = !showGraphs;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.H)) {
+            showPredatorGenes = !showPredatorGenes;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.T)) {
+            // Off, then each gene in turn, then off again
+            tintGene = tintGene + 1 >= PopulationHistory.GENE_COUNT ? -1 : tintGene + 1;
+            worldRenderer.setTintGene(tintGene);
+        }
     }
 
+    /** Clicking a creature inspects and follows it; clicking empty ground clears the selection. */
     private void selectCreatureAt(float screenX, float screenY) {
         Vector3 world = camera.unproject(touchPoint.set(screenX, screenY, 0));
         selectedEntity = null;
@@ -230,31 +202,37 @@ public class SimulationScreen extends ScreenAdapter {
             if (world.x >= pos.position.x && world.x <= pos.position.x + World.CREATURE_SIZE
                 && world.y >= pos.position.y && world.y <= pos.position.y + World.CREATURE_SIZE) {
                 selectedEntity = creature;
-                return;
+                break;
             }
         }
+        cameraController.follow(selectedEntity);
     }
 
-    // --- On-screen panel --------------------------------------------------------------------------------
+    // --- On-screen panels -------------------------------------------------------------------------------
 
     private void renderHud() {
         batch.setProjectionMatrix(uiCamera.combined);
         batch.begin();
         drawStatusLine();
         drawStatsPanel();
+        if (showGraphs) {
+            float width = Math.min(1100f, uiCamera.viewportWidth * 0.45f);
+            float height = Math.min(760f, uiCamera.viewportHeight * 0.6f);
+            graphRenderer.render(history, showPredatorGenes, uiCamera.viewportWidth - width - MARGIN, MARGIN * 3f, width, height);
+        }
         batch.end();
     }
 
     private void drawStatusLine() {
         String speed = paused ? "PAUSED" : (int) SPEEDS[speedIndex] + "x speed";
+        String tint = tintGene >= 0 ? "    Tint: " + PopulationHistory.GENE_NAMES[tintGene] + " (blue low, red high)" : "";
+        String following = cameraController.isFollowing() ? "    Following" : "";
 
         font.setColor(Color.WHITE);
-        font.getData().setScale(2f);
-        font.draw(batch, "Population: " + creatures.size() + "    " + speed + "    Seed: " + seed,
-            20f, uiCamera.position.y + (uiCamera.viewportHeight / 2f) - 20f);
-
-        font.getData().setScale(1.5f);
-        font.draw(batch, "Esc: settings   P: pause   1-5: speed   WASD: move   Q/E: zoom   Space: follow   Click: inspect", 20f, 30f);
+        float top = uiCamera.viewportHeight - MARGIN;
+        font.draw(batch, "Population: " + creatures.size() + "    " + speed + "    Seed: " + seed + following + tint, MARGIN, top);
+        font.setColor(Color.LIGHT_GRAY);
+        font.draw(batch, CONTROLS, MARGIN, MARGIN + font.getCapHeight());
     }
 
     private void drawStatsPanel() {
@@ -265,48 +243,41 @@ public class SimulationScreen extends ScreenAdapter {
         StatsComponent stats = selectedEntity.getComponent(StatsComponent.class);
         GenderComponent gender = selectedEntity.getComponent(GenderComponent.class);
         BehaviourComponent behaviour = selectedEntity.getComponent(BehaviourComponent.class);
+        GenomeComponent dna = selectedEntity.getComponent(GenomeComponent.class);
+        AgeComponent age = selectedEntity.getComponent(AgeComponent.class);
 
-        float widthScale = currentScreenWidth / DESIGN_WIDTH;
-        float heightScale = currentScreenHeight / DESIGN_HEIGHT;
+        String[] lines = {
+            (Creatures.isPredator(selectedEntity) ? "PREDATOR" : "PREY") + "  " + gender.gender + "  gen " + age.generation,
+            "Age: " + (int) (age.age / 60f) + ":" + String.format("%02d", (int) age.age % 60)
+                + " of ~" + (int) (age.lifespan / 60f) + " min",
+            "Health " + (int) stats.health + "   Energy " + (int) stats.energy,
+            "Hunger " + (int) stats.hunger + "   Thirst " + (int) stats.thirst,
+            "Doing: " + behaviour.behaviour,
+            "",
+            "Speed " + (int) Traits.speed(dna) + "   Vision " + (int) Traits.visionRange(dna),
+            String.format("Size %.2f   Stealth %.2f", dna.genes[GenomeComponent.SIZE], dna.genes[GenomeComponent.STEALTH]),
+            String.format("Metabolism %.2f   Recovery %.2f", dna.genes[GenomeComponent.METABOLISM], dna.genes[GenomeComponent.RECOVERY_RATE]),
+        };
 
-        float panelWidth = 440f * widthScale;
-        float panelHeight = 280f * heightScale;
-        float padding = 20f * heightScale;
-        float topY = uiCamera.position.y + (uiCamera.viewportHeight / 2f);
-        float y = topY - panelHeight - padding;
+        float lineHeight = font.getLineHeight();
+        float panelWidth = 560f;
+        float panelHeight = lines.length * lineHeight + MARGIN * 1.5f;
+        float x = MARGIN;
+        float y = uiCamera.viewportHeight - MARGIN * 2.5f - lineHeight - panelHeight;
 
-        shapeDrawer.filledRectangle(padding, y, panelWidth, panelHeight, panelBg);
-        shapeDrawer.rectangle(padding, y, panelWidth, panelHeight, panelBorder, 1f);
+        shapeDrawer.filledRectangle(x, y, panelWidth, panelHeight, panelBg);
+        shapeDrawer.rectangle(x, y, panelWidth, panelHeight, panelBorder, 1f);
 
         font.setColor(Color.WHITE);
-        font.getData().setScale(2.5f * widthScale * heightScale);
-        float textX = padding + 10f;
-        float textY = y + panelHeight - 10f;
-        float lineHeight = 40f * heightScale;
-
-        font.draw(batch, "STATS", textX, textY);
-        textY -= 50f * heightScale;
-        String[] lines = {
-            "Hunger: " + (int) stats.hunger,
-            "Thirst: " + (int) stats.thirst,
-            "Energy: " + (int) stats.energy,
-            "Health: " + (int) stats.health,
-            "Gender: " + gender.gender,
-            "Role: " + (Creatures.isPredator(selectedEntity) ? "Predator" : "Prey"),
-            "Speed: " + (int) Traits.speed(selectedEntity.getComponent(GenomeComponent.class)),
-            "Behaviour: " + behaviour.behaviour,
-        };
+        float textY = y + panelHeight - MARGIN * 0.75f;
         for (String line : lines) {
-            font.draw(batch, line, textX, textY);
+            font.draw(batch, line, x + MARGIN, textY);
             textY -= lineHeight;
         }
     }
 
     @Override
     public void resize(int width, int height) {
-        currentScreenWidth = width;
-        currentScreenHeight = height;
-
         // Update world camera and recenter it
         camera.viewportWidth = width;
         camera.viewportHeight = height;
@@ -325,6 +296,6 @@ public class SimulationScreen extends ScreenAdapter {
         worldRenderer.dispose();
         batch.dispose();
         whitePixel.dispose();
-        font.dispose();
+        font.setColor(Color.WHITE); // Shared with the start screen's widgets
     }
 }

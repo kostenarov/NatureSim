@@ -100,10 +100,14 @@ public class WaterSourceSystem extends EntitySystem {
 
     /** True when the creature is close enough to the pond to drink. */
     public static boolean canDrinkFrom(Entity pond, PositionComponent creaturePos) {
+        return distanceFromShore(pond, creaturePos) <= DRINK_MARGIN;
+    }
+
+    /** How far the creature's center is from the pond's shore (negative when standing in the water). */
+    public static float distanceFromShore(Entity pond, PositionComponent creaturePos) {
         PositionComponent pondPos = pond.getComponent(PositionComponent.class);
         float radius = pond.getComponent(WaterSourceComponent.class).radius;
-        float distance = pondPos.position.dst(creaturePos.position.x + World.CREATURE_HALF_SIZE, creaturePos.position.y + World.CREATURE_HALF_SIZE);
-        return distance <= radius + DRINK_MARGIN;
+        return pondPos.position.dst(creaturePos.position.x + World.CREATURE_HALF_SIZE, creaturePos.position.y + World.CREATURE_HALF_SIZE) - radius;
     }
 
     /** Where a creature's PositionComponent should head to reach the pond (aims its center at the pond center). */

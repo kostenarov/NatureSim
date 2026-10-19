@@ -15,8 +15,10 @@ import io.kostenarov.natureSim.Components.StatsComponent;
  *   <li>RECOVERY_RATE: regains energy faster while resting, but burns more food while resting.</li>
  *   <li>HUNGER/THIRST_SENSITIVITY: starts looking for food/water earlier. Safer, but spends more time foraging.</li>
  *   <li>SCENT_RANGE (predators): smells prey from farther away, at a food cost.</li>
+ *   <li>SIZE: a tougher body takes less damage (and predators bite harder), but a big body needs more food.</li>
+ *   <li>STEALTH: harder to spot, but stealthy movement is slower when chasing or fleeing.</li>
  * </ul>
- * SIZE and STEALTH are not used yet.
+ * Creatures heal slowly while they have food and water in them.
  */
 public final class Traits {
     // Average creature (all genes = 1) loses these amounts per second while active.
@@ -26,6 +28,8 @@ public final class Traits {
     private static final float BASE_ENERGY_RECOVER_PER_SEC = 4f;
     private static final float BASE_HEALTH_LOSS_PER_SEC = 12f;
     private static final float RESTING_UPKEEP = 0.4f; // Resting burns food/water at 40% of the active rate
+    private static final float HEAL_PER_SEC = 1f;      // Health regained per second while fed and watered
+    private static final float RESTING_HEAL_PER_SEC = 2f;
 
     private static final float AVERAGE_SPEED = 250f;
     private static final float AVERAGE_VISION_RANGE = 190f;
@@ -70,6 +74,21 @@ public final class Traits {
         return 15f + gene(dna, GenomeComponent.THIRST_SENSITIVITY) * 15f;
     }
 
+    /** Body toughness (0.6 to 1.4): incoming damage is divided by it, and a predator's bite is multiplied by it. */
+    public static float toughness(GenomeComponent dna) {
+        return 0.6f + gene(dna, GenomeComponent.SIZE) * 0.4f;
+    }
+
+    /** How easily others spot this creature (1.25 down to 0.75): scales the range at which it can be seen. */
+    public static float visibility(GenomeComponent dna) {
+        return 1.25f - gene(dna, GenomeComponent.STEALTH) * 0.25f;
+    }
+
+    /** Speed multiplier while chasing or fleeing (1.1 down to 0.9): stealthy movement is slower. */
+    public static float pursuitSpeedFactor(GenomeComponent dna) {
+        return 1.1f - gene(dna, GenomeComponent.STEALTH) * 0.1f;
+    }
+
     // --- Costs -----------------------------------------------------------------------------------------
 
     private static float speedFactor(GenomeComponent dna) {
@@ -84,6 +103,7 @@ public final class Traits {
     public static float upkeep(GenomeComponent dna, boolean predator) {
         float speed = speedFactor(dna);
         float upkeep = 0.4f + 0.4f * speed * speed + 0.2f * (visionRange(dna) / AVERAGE_VISION_RANGE);
+        upkeep += 0.5f * (toughness(dna) - 1f); // A bigger body needs more food
         if (predator) {
             upkeep += 0.15f * (scentFactor(dna) - 1f);
         }
@@ -106,6 +126,7 @@ public final class Traits {
         stats.thirst = Math.max(0f, stats.thirst - BASE_THIRST_PER_SEC * upkeep * deltaTime);
         stats.energy = Math.max(0f, stats.energy - energyBurnRate(dna) * deltaTime);
         applyStarvation(stats, dna, deltaTime);
+        heal(stats, HEAL_PER_SEC, deltaTime);
     }
 
     /** Recovers energy while resting; faster recovery burns more food. */
@@ -116,6 +137,19 @@ public final class Traits {
         stats.hunger = Math.max(0f, stats.hunger - BASE_HUNGER_PER_SEC * upkeep * (recoveryGene / 1.5f) * deltaTime);
         stats.thirst = Math.max(0f, stats.thirst - BASE_THIRST_PER_SEC * upkeep * deltaTime);
         applyStarvation(stats, dna, deltaTime);
+        heal(stats, RESTING_HEAL_PER_SEC, deltaTime);
+    }
+
+    /** Wounds heal slowly while the creature has food and water in it. */
+    private static void heal(StatsComponent stats, float ratePerSec, float deltaTime) {
+        if (stats.hunger > 0f && stats.thirst > 0f && stats.health > 0f) {
+            stats.health = Math.min(100f, stats.health + ratePerSec * deltaTime);
+        }
+    }
+
+    /** Damage a bite from {@code attacker} does to {@code defender}: big attackers hit harder, big defenders take less. */
+    public static float biteDamage(float baseDamage, GenomeComponent attacker, GenomeComponent defender) {
+        return baseDamage * toughness(attacker) / toughness(defender);
     }
 
     /** Loses health while starving or dehydrated; a higher metabolism holds out longer. */

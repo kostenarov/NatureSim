@@ -23,31 +23,11 @@ class EvolutionTest extends SimTestSupport {
 
     private static final Family CREATURES = Family.all(StatsComponent.class).get();
 
-    private static void addSimulationSystems(Engine e, SimulationConfig cfg) {
-        e.addSystem(new WaterSourceSystem(cfg));
-        e.addSystem(new FoodSourceSystem(cfg));
-        e.addSystem(new MatingSystem(cfg));
-        e.addSystem(new PredatorSystem());
-        e.addSystem(new PreySystem());
-        e.addSystem(new CollisionSystem());
-        e.addSystem(new MetabolismSystem());
-        e.addSystem(new DeathSystem());
-    }
-
     /** Runs 20 simulated seconds of the full system set and returns every creature's position. */
     private static float[] seededRun(long seed) {
         MathUtils.random.setSeed(seed);
         SimulationConfig cfg = new SimulationConfig();
-        Engine e = new Engine();
-        e.addSystem(new SpatialIndexSystem());
-        e.addSystem(new WaterSourceSystem(cfg));
-        e.addSystem(new FoodSourceSystem(cfg));
-        e.addSystem(new MatingSystem(cfg));
-        e.addSystem(new PredatorSystem());
-        e.addSystem(new PreySystem());
-        e.addSystem(new MetabolismSystem());
-        e.addSystem(new CollisionSystem());
-        e.addSystem(new DeathSystem());
+        Engine e = Simulation.createEngine(cfg);
         for (int i = 0; i < 200; i++) {
             Entity c = Creatures.create(e, MathUtils.random(200f, 4900f), MathUtils.random(200f, 4900f), new GenomeComponent());
             if (i < 4) Creatures.makePredator(c);
@@ -76,8 +56,7 @@ class EvolutionTest extends SimTestSupport {
     @Test
     @DisplayName("ecosystem smoke run: 300 prey and 4 predators for 3 sim-minutes")
     void ecosystemSmokeRun() {
-        Engine e = new Engine();
-        addSimulationSystems(e, new SimulationConfig());
+        Engine e = Simulation.createEngine(new SimulationConfig());
         Random r = new Random(2);
         for (int i = 0; i < 300; i++) {
             Entity a = creature(e, 200 + r.nextFloat() * 4500, 200 + r.nextFloat() * 4500, r.nextBoolean() ? Gender.MALE : Gender.FEMALE, false);
@@ -106,8 +85,7 @@ class EvolutionTest extends SimTestSupport {
     @Tag("slow")
     @DisplayName("evolution run: 400 prey and 4 predators keep a living population for 15 sim-minutes")
     void evolutionRunKeepsPopulationAlive() {
-        Engine e = new Engine();
-        addSimulationSystems(e, new SimulationConfig());
+        Engine e = Simulation.createEngine(new SimulationConfig());
         Random r = new Random(3);
         for (int i = 0; i < 400; i++) {
             Entity a = creature(e, 200 + r.nextFloat() * 4700, 200 + r.nextFloat() * 4700, r.nextBoolean() ? Gender.MALE : Gender.FEMALE, false);

@@ -67,6 +67,7 @@ public class StartScreen extends ScreenAdapter {
         addSlider(root, "Ponds", 0, 40, 1, config.pondCount, "%.0f", v -> config.pondCount = (int) v);
 
         addSection(root, "Reproduction & evolution");
+        addSlider(root, "Lifespan", 1f, 60f, 1f, config.lifespanMinutes, "%.0f min", v -> config.lifespanMinutes = v);
         addSlider(root, "Mating cooldown", 1f, 60f, 1f, config.matingCooldown, "%.0f s", v -> config.matingCooldown = v);
         addSlider(root, "Mutation chance", 0f, 1f, 0.01f, config.mutationRate, "%.2f", v -> config.mutationRate = v);
         addSlider(root, "Mutation size", 0f, 1f, 0.05f, config.mutationAmount, "%.2f", v -> config.mutationAmount = v);

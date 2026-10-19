@@ -46,7 +46,7 @@ class PredatorTest extends SimTestSupport {
         e.update(DT);
         EntityBehaviour hungry = p.getComponent(BehaviourComponent.class).behaviour;
 
-        assertEquals(EntityBehaviour.EXPLORING, sated, "sated behaviour");
+        assertTrue(sated != EntityBehaviour.HUNTING && sated != EntityBehaviour.ATTACKING, "sated predator should not hunt, was " + sated);
         assertEquals(EntityBehaviour.HUNTING, hungry, "hungry behaviour");
     }
 }

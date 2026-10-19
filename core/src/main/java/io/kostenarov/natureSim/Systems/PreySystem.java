@@ -10,16 +10,16 @@ import io.kostenarov.natureSim.Traits;
 import io.kostenarov.natureSim.World;
 
 /**
- * Prey behaviour: flee from visible predators, otherwise drink, eat, rest or wander.
+ * Prey behaviour: flee from visible predators, otherwise drink, eat what they can see, court a visible
+ * partner, rest or wander.
  */
 public class PreySystem extends CreatureSystem {
     private static final float FOOD_CONSUMPTION_DISTANCE = 32f; // How close to be to eat food
     private static final float ESCAPE_SPEED_MULTIPLIER = 1.25f;
-    private static final int GRID_FOOD_SEARCH_MIN = 100; // Below this much food, scan the list instead
+    private static final float WALL_AVOID_DISTANCE = 150f;      // Fleeing prey steer away from map edges this close
 
     private ImmutableArray<Entity> foodEntities;
     private ImmutableArray<Entity> predatorEntities;
-    private final SpatialGrid.Filter uneatenFood = food -> !food.getComponent(FoodSourceComponent.class).consumed;
 
     public PreySystem() {
         super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class,
@@ -39,7 +39,7 @@ public class PreySystem extends CreatureSystem {
         BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
         GenomeComponent dna = entity.getComponent(GenomeComponent.class);
 
-        if (findNearestVisiblePredator(entity) != null) {
+        if (fleeDirection(entity)) {
             return EntityBehaviour.FLEEING;
         }
 
@@ -53,26 +53,35 @@ public class PreySystem extends CreatureSystem {
         }
 
         // Once resting, keep resting until energy has recovered; once active, rest when nearly exhausted.
-        if (behaviour.behaviour == EntityBehaviour.IDLE) {
-            return stats.energy >= ENERGY_RESUME_THRESHOLD ? EntityBehaviour.EXPLORING : EntityBehaviour.IDLE;
+        if (behaviour.behaviour == EntityBehaviour.IDLE && stats.energy < ENERGY_RESUME_THRESHOLD) {
+            return EntityBehaviour.IDLE;
         }
         if (stats.energy <= ENERGY_STOP_THRESHOLD) {
             return EntityBehaviour.IDLE;
         }
-        return EntityBehaviour.EXPLORING;
+
+        // Adults ready to breed go courting (toward a partner in sight, or to a waterhole to find one)
+        if (MatingSystem.isReadyToMate(entity)) {
+            return EntityBehaviour.SEEKING_MATE;
+        }
+        // Nothing to do: rest up rather than burn energy wandering, then wander once fresh
+        return restOrWander(stats, behaviour);
     }
 
     @Override
     protected void executeBehaviour(Entity entity, EntityBehaviour behaviour, float deltaTime) {
         switch (behaviour) {
             case FLEEING:
-                fleeFromPredator(entity, deltaTime);
+                flee(entity, deltaTime);
                 break;
             case SEEKING_FOOD:
                 seekFood(entity, deltaTime);
                 break;
             case SEEKING_WATER:
                 seekWater(entity, deltaTime);
+                break;
+            case SEEKING_MATE:
+                approachPartner(entity, findVisiblePartner(entity), deltaTime);
                 break;
             case EXPLORING:
                 explore(entity, deltaTime);
@@ -84,43 +93,52 @@ public class PreySystem extends CreatureSystem {
         }
     }
 
+    // --- Food -------------------------------------------------------------------------------------------
+
+    /** Go for the nearest food in sight; with none in sight, look around the waterholes, where most food grows. */
     private void seekFood(Entity entity, float deltaTime) {
         PositionComponent pos = entity.getComponent(PositionComponent.class);
 
-        Entity nearestFood = findNearestFood(pos);
-        if (nearestFood == null) {
-            stop(entity); // No food anywhere: wait for some to grow
+        Entity food = findNearestVisibleFood(entity);
+        if (food == null) {
+            roamNearWater(entity, deltaTime);
             return;
         }
 
-        PositionComponent foodPos = nearestFood.getComponent(PositionComponent.class);
+        PositionComponent foodPos = food.getComponent(PositionComponent.class);
         if (pos.position.dst(foodPos.position) < FOOD_CONSUMPTION_DISTANCE) {
             StatsComponent stats = entity.getComponent(StatsComponent.class);
-            FoodSourceComponent food = nearestFood.getComponent(FoodSourceComponent.class);
-            stats.hunger = Math.min(100f, stats.hunger + food.nutritionValue);
-            food.consumed = true;
+            FoodSourceComponent foodComponent = food.getComponent(FoodSourceComponent.class);
+            stats.hunger = Math.min(100f, stats.hunger + foodComponent.nutritionValue);
+            foodComponent.consumed = true;
             stop(entity);
         } else {
             moveToward(entity, foodPos.position, Traits.speed(entity.getComponent(GenomeComponent.class)), deltaTime);
         }
     }
 
-    /** Nearest food that hasn't been eaten yet, anywhere on the map. */
-    private Entity findNearestFood(PositionComponent pos) {
-        // With only a little food on the map, a plain scan beats walking many empty grid cells.
+    /** Nearest uneaten food inside the vision cone, or null. Food right underfoot always counts. */
+    private Entity findNearestVisibleFood(Entity entity) {
+        PositionComponent pos = entity.getComponent(PositionComponent.class);
+        VisionComponent vision = entity.getComponent(VisionComponent.class);
+
+        Iterable<Entity> candidates = foodEntities;
         SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
-        if (index != null && foodEntities.size() >= GRID_FOOD_SEARCH_MIN) {
-            return index.food().findNearest(pos.position.x, pos.position.y, World.DIAGONAL, uneatenFood);
+        if (index != null) {
+            index.food().query(pos.position.x, pos.position.y, vision.visionRange, nearby);
+            candidates = nearby;
         }
 
         Entity nearestFood = null;
         float nearestDistance = Float.MAX_VALUE;
-        for (Entity food : foodEntities) {
-            if (!uneatenFood.accept(food)) {
-                continue;
+        for (Entity food : candidates) {
+            if (food.getComponent(FoodSourceComponent.class).consumed) {
+                continue; // Already eaten this frame, removed next frame
             }
-            float distance = pos.position.dst(food.getComponent(PositionComponent.class).position);
-            if (distance < nearestDistance) {
+            PositionComponent foodPos = food.getComponent(PositionComponent.class);
+            float distance = pos.position.dst(foodPos.position);
+            boolean visible = distance < FOOD_CONSUMPTION_DISTANCE || isInVisionCone(pos, vision, foodPos, vision.visionRange);
+            if (visible && distance < nearestDistance) {
                 nearestDistance = distance;
                 nearestFood = food;
             }
@@ -128,36 +146,78 @@ public class PreySystem extends CreatureSystem {
         return nearestFood;
     }
 
-    private void fleeFromPredator(Entity prey, float deltaTime) {
-        Entity predator = findNearestVisiblePredator(prey);
-        if (predator == null) {
-            stop(prey);
-            return;
-        }
+    // --- Predators --------------------------------------------------------------------------------------
 
-        PositionComponent preyPos = prey.getComponent(PositionComponent.class);
-        PositionComponent predatorPos = predator.getComponent(PositionComponent.class);
-        tmp.set(preyPos.position).sub(predatorPos.position).nor(); // Directly away from the predator
-        float speed = Traits.speed(prey.getComponent(GenomeComponent.class)) * ESCAPE_SPEED_MULTIPLIER;
-        moveInDirection(prey, tmp.x, tmp.y, speed, deltaTime);
-    }
-
-    private Entity findNearestVisiblePredator(Entity prey) {
+    /**
+     * Works out the escape direction into {@code tmp}: away from every visible predator (closer ones count
+     * more) and away from nearby map edges, so prey don't get pinned against a wall.
+     * Returns false if no predator is in sight.
+     */
+    private boolean fleeDirection(Entity prey) {
         PositionComponent preyPos = prey.getComponent(PositionComponent.class);
         VisionComponent vision = prey.getComponent(VisionComponent.class);
 
-        Entity nearestPredator = null;
-        float nearestDistance = Float.MAX_VALUE;
-        for (Entity candidate : predatorEntities) {
-            PositionComponent candidatePos = candidate.getComponent(PositionComponent.class);
-            if (canSee(preyPos, vision, candidatePos)) {
-                float distance = preyPos.position.dst(candidatePos.position);
-                if (distance < nearestDistance) {
-                    nearestDistance = distance;
-                    nearestPredator = candidate;
+        float awayX = 0f;
+        float awayY = 0f;
+        boolean threatened = false;
+        for (Entity predator : predatorEntities) {
+            if (!canSee(preyPos, vision, predator)) {
+                continue;
+            }
+            PositionComponent predatorPos = predator.getComponent(PositionComponent.class);
+            float dx = preyPos.position.x - predatorPos.position.x;
+            float dy = preyPos.position.y - predatorPos.position.y;
+            float distanceSquared = Math.max(1f, dx * dx + dy * dy);
+            // Unit vector away from the predator, weighted by 1/distance
+            awayX += dx / distanceSquared;
+            awayY += dy / distanceSquared;
+            threatened = true;
+        }
+        if (!threatened) {
+            return false;
+        }
+
+        // Near a wall, don't run into it: drop the part of the escape that points at the wall and slide along it
+        float x = preyPos.position.x;
+        float y = preyPos.position.y;
+        float maxX = World.WIDTH - World.CREATURE_SIZE;
+        float maxY = World.HEIGHT - World.CREATURE_SIZE;
+        boolean blockedX = (x < WALL_AVOID_DISTANCE && awayX < 0f) || (maxX - x < WALL_AVOID_DISTANCE && awayX > 0f);
+        boolean blockedY = (y < WALL_AVOID_DISTANCE && awayY < 0f) || (maxY - y < WALL_AVOID_DISTANCE && awayY > 0f);
+        if (blockedX) {
+            awayX = 0f;
+        }
+        if (blockedY) {
+            awayY = 0f;
+        }
+
+        tmp.set(awayX, awayY);
+        if (tmp.isZero(0.000001f)) {
+            // Pinned head-on against a wall: run along it, toward the middle of that wall
+            if (blockedX && !blockedY) {
+                tmp.set(0f, y < World.HEIGHT / 2f ? 1f : -1f);
+            } else if (blockedY && !blockedX) {
+                tmp.set(x < World.WIDTH / 2f ? 1f : -1f, 0f);
+            } else {
+                tmp.set(World.WIDTH / 2f - x, World.HEIGHT / 2f - y); // Cornered: head for open ground
+                if (tmp.isZero()) {
+                    tmp.set(1f, 0f);
                 }
             }
         }
-        return nearestPredator;
+        tmp.nor();
+        return true;
+    }
+
+    private void flee(Entity prey, float deltaTime) {
+        if (!fleeDirection(prey)) {
+            stop(prey);
+            return;
+        }
+        GenomeComponent dna = prey.getComponent(GenomeComponent.class);
+        float speed = Traits.speed(dna) * ESCAPE_SPEED_MULTIPLIER * Traits.pursuitSpeedFactor(dna);
+        float directionX = tmp.x;
+        float directionY = tmp.y;
+        moveInDirection(prey, directionX, directionY, speed, deltaTime);
     }
 }

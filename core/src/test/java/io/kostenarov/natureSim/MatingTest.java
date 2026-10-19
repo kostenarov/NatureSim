@@ -5,6 +5,7 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import io.kostenarov.natureSim.Components.GenomeComponent;
 import io.kostenarov.natureSim.Components.PredatorComponent;
+import io.kostenarov.natureSim.Components.ReproductionComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Enums.Gender;
 import io.kostenarov.natureSim.Systems.MatingSystem;
@@ -100,6 +101,6 @@ class MatingTest extends SimTestSupport {
 
         assertEquals(2, whileHungry, "entities while hungry");
         assertEquals(3, e.getEntities().size(), "entities after feeding");
-        assertEquals(85f, stats(a).hunger, "parent hunger after mating");
+        assertEquals(100f - ReproductionComponent.MATING_HUNGER_COST, stats(a).hunger, "parent hunger after mating");
     }
 }

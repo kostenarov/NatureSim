@@ -57,10 +57,7 @@ public class MatingSystem extends EntitySystem {
 
         for (int i = 0; i < matingEntities.size(); i++) {
             Entity entity1 = matingEntities.get(i);
-            ReproductionComponent repro1 = entity1.getComponent(ReproductionComponent.class);
-            StatsComponent stats1 = entity1.getComponent(StatsComponent.class);
-
-            if (repro1.matingCooldown > 0 || !isFitToMate(stats1)) {
+            if (!isReadyToMate(entity1)) {
                 continue;
             }
 
@@ -73,37 +70,14 @@ public class MatingSystem extends EntitySystem {
             }
 
             for (Entity entity2 : candidates) {
-                ReproductionComponent repro2 = entity2.getComponent(ReproductionComponent.class);
-                if (entity2 == entity1 || repro2 == null) {
+                if (!arePartners(entity1, entity2) || !isReadyToMate(entity2)) {
                     continue;
                 }
-                StatsComponent stats2 = entity2.getComponent(StatsComponent.class);
-                PositionComponent pos2 = entity2.getComponent(PositionComponent.class);
-
-                if (repro2.matingCooldown > 0 || !isFitToMate(stats2)) {
+                if (pos1.position.dst(entity2.getComponent(PositionComponent.class).position) > ReproductionComponent.MATING_DISTANCE) {
                     continue;
                 }
 
-                float distance = pos1.position.dst(pos2.position);
-                if (distance > ReproductionComponent.MATING_DISTANCE) {
-                    continue;
-                }
-
-                GenderComponent gender1 = entity1.getComponent(GenderComponent.class);
-                GenderComponent gender2 = entity2.getComponent(GenderComponent.class);
-
-                if (gender1.gender == gender2.gender) {
-                    continue;
-                }
-
-                // Predators only mate with predators, prey only with prey.
-                if (Creatures.isPredator(entity1) != Creatures.isPredator(entity2)) {
-                    continue;
-                }
-
-                // Perform mating
                 mate(entity1, entity2);
-
                 break;
             }
         }
@@ -121,8 +95,9 @@ public class MatingSystem extends EntitySystem {
         // The offspring is built from the parents' food reserves, so births are limited by food supply.
         stats1.hunger -= ReproductionComponent.MATING_HUNGER_COST;
         stats2.hunger -= ReproductionComponent.MATING_HUNGER_COST;
-        repro1.matingCooldown = matingCooldown;
-        repro2.matingCooldown = matingCooldown;
+        float cooldown = Creatures.isPredator(parent1) ? matingCooldown * ReproductionComponent.PREDATOR_COOLDOWN_FACTOR : matingCooldown;
+        repro1.matingCooldown = cooldown;
+        repro2.matingCooldown = cooldown;
 
         createOffspring(parent1, parent2);
     }
@@ -155,9 +130,15 @@ public class MatingSystem extends EntitySystem {
         // Newborns start half fed and a little frail
         StatsComponent offspringStats = offspring.getComponent(StatsComponent.class);
         offspringStats.energy = 50f;
-        offspringStats.hunger = 50f;
+        offspringStats.hunger = 2 * ReproductionComponent.MATING_HUNGER_COST; // Exactly what the parents gave up
         offspringStats.thirst = 50f;
         offspringStats.health = 80f;
+
+        // One generation after the younger-lineage parent
+        AgeComponent parent1Age = parent1.getComponent(AgeComponent.class);
+        AgeComponent parent2Age = parent2.getComponent(AgeComponent.class);
+        int parentGeneration = Math.max(parent1Age != null ? parent1Age.generation : 0, parent2Age != null ? parent2Age.generation : 0);
+        offspring.getComponent(AgeComponent.class).generation = parentGeneration + 1;
 
         // Predator parents produce predator offspring
         if (Creatures.isPredator(parent1)) {
@@ -167,11 +148,34 @@ public class MatingSystem extends EntitySystem {
         engine.addEntity(offspring);
     }
 
-    /** Only well-fed, rested creatures reproduce, so reproduction depends on how well a creature survives. */
-    private boolean isFitToMate(StatsComponent stats) {
+    /**
+     * Only adult, well-fed, rested creatures off cooldown reproduce, so reproduction depends on how well
+     * a creature survives.
+     */
+    public static boolean isReadyToMate(Entity creature) {
+        ReproductionComponent repro = creature.getComponent(ReproductionComponent.class);
+        StatsComponent stats = creature.getComponent(StatsComponent.class);
+        if (repro == null || stats == null || repro.matingCooldown > 0) {
+            return false;
+        }
+        AgeComponent age = creature.getComponent(AgeComponent.class);
+        if (age != null && age.age < ReproductionComponent.MATURITY_AGE) {
+            return false;
+        }
         return stats.energy >= ReproductionComponent.MATING_ENERGY_COST
-            && stats.hunger >= ReproductionComponent.MATING_MIN_HUNGER
+            && stats.hunger >= (Creatures.isPredator(creature) ? ReproductionComponent.PREDATOR_MATING_MIN_HUNGER : ReproductionComponent.MATING_MIN_HUNGER)
             && stats.thirst >= ReproductionComponent.MATING_MIN_THIRST;
+    }
+
+    /** Two different creatures of opposite sex and the same role (prey with prey, predators with predators). */
+    public static boolean arePartners(Entity a, Entity b) {
+        if (a == b) {
+            return false;
+        }
+        GenderComponent genderA = a.getComponent(GenderComponent.class);
+        GenderComponent genderB = b.getComponent(GenderComponent.class);
+        return genderA != null && genderB != null && genderA.gender != genderB.gender
+            && Creatures.isPredator(a) == Creatures.isPredator(b);
     }
 }
 

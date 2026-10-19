@@ -19,6 +19,8 @@ import io.kostenarov.natureSim.Traits;
  * Predator behaviour: rest, drink, wander while sated, and when hungry hunt prey by sight or follow its scent.
  */
 public class PredatorSystem extends CreatureSystem {
+    private static final float MATE_SCENT_FACTOR = 3f;
+
     private ImmutableArray<Entity> preyEntities;
 
     public PredatorSystem() {
@@ -38,6 +40,13 @@ public class PredatorSystem extends CreatureSystem {
     protected void processEntity(Entity entity, float deltaTime) {
         PredatorComponent predator = entity.getComponent(PredatorComponent.class);
         predator.attackTimer = Math.max(0f, predator.attackTimer - deltaTime);
+        if (predator.eatingTimer > 0f) {
+            // Still eating the last kill: stay put (counts as resting for metabolism)
+            predator.eatingTimer -= deltaTime;
+            entity.getComponent(BehaviourComponent.class).behaviour = EntityBehaviour.IDLE;
+            stop(entity);
+            return;
+        }
         super.processEntity(entity, deltaTime);
     }
 
@@ -61,10 +70,10 @@ public class PredatorSystem extends CreatureSystem {
             return EntityBehaviour.SEEKING_WATER;
         }
 
-        // Only hunt once there is room for a full meal; a sated predator just wanders.
+        // Only hunt once there is room for a full meal; a sated predator looks for a mate or wanders.
         if (!hungry) {
             clearScentTarget(predator);
-            return EntityBehaviour.EXPLORING;
+            return MatingSystem.isReadyToMate(entity) ? EntityBehaviour.SEEKING_MATE : restOrWander(stats, behaviour);
         }
 
         Entity prey = findNearestVisiblePrey(entity);
@@ -82,6 +91,18 @@ public class PredatorSystem extends CreatureSystem {
         return distance <= predator.attackRange ? EntityBehaviour.ATTACKING : EntityBehaviour.HUNTING;
     }
 
+    /** Predators are few and far between, so they find mates by smell (a mate's scent carries further than prey's). */
+    @Override
+    protected float partnerSearchRange(Entity entity) {
+        return entity.getComponent(PredatorComponent.class).scentRange * MATE_SCENT_FACTOR;
+    }
+
+    @Override
+    protected boolean canDetectPartner(Entity entity, Entity candidate) {
+        float range = partnerSearchRange(entity);
+        return entity.getComponent(PositionComponent.class).position.dst2(candidate.getComponent(PositionComponent.class).position) <= range * range;
+    }
+
     private boolean isHungry(StatsComponent stats, PredatorComponent predator) {
         float missingHunger = 100f - stats.hunger;
         return missingHunger >= predator.killEnergyGain * predator.huntEnergyBufferMultiplier;
@@ -97,10 +118,16 @@ public class PredatorSystem extends CreatureSystem {
             case SEEKING_WATER:
                 seekWater(entity, deltaTime);
                 break;
+            case SEEKING_MATE:
+                approachPartner(entity, findVisiblePartner(entity), deltaTime);
+                break;
             case EXPLORING:
                 // decideBehaviour only sets a scent target while the predator is hungry.
-                if (entity.getComponent(PredatorComponent.class).hasScentTarget) {
+                PredatorComponent predator = entity.getComponent(PredatorComponent.class);
+                if (predator.hasScentTarget) {
                     followScent(entity, deltaTime);
+                } else if (isHungry(entity.getComponent(StatsComponent.class), predator)) {
+                    roamNearWater(entity, deltaTime); // Prey gather at the waterholes
                 } else {
                     explore(entity, deltaTime);
                 }
@@ -131,7 +158,8 @@ public class PredatorSystem extends CreatureSystem {
             return;
         }
 
-        float speed = Traits.speed(predator.getComponent(GenomeComponent.class)) * predatorData.huntSpeedMultiplier;
+        GenomeComponent dna = predator.getComponent(GenomeComponent.class);
+        float speed = Traits.speed(dna) * predatorData.huntSpeedMultiplier * Traits.pursuitSpeedFactor(dna);
         moveToward(predator, preyPos.position, speed, deltaTime);
     }
 
@@ -167,11 +195,13 @@ public class PredatorSystem extends CreatureSystem {
         PredatorComponent predatorData = predator.getComponent(PredatorComponent.class);
         StatsComponent preyStats = prey.getComponent(StatsComponent.class);
 
-        preyStats.health = Math.max(0f, preyStats.health - predatorData.attackDamage);
+        float damage = Traits.biteDamage(predatorData.attackDamage, predator.getComponent(GenomeComponent.class), prey.getComponent(GenomeComponent.class));
+        preyStats.health = Math.max(0f, preyStats.health - damage);
         if (preyStats.health <= 0f) {
             predatorStats.energy = Math.min(100f, predatorStats.energy + predatorData.killEnergyGain);
             predatorStats.hunger = Math.min(100f, predatorStats.hunger + predatorData.killEnergyGain);
             clearScentTarget(predatorData);
+            predatorData.eatingTimer = predatorData.eatingDuration;
             getEngine().removeEntity(prey);
         }
     }
@@ -184,7 +214,7 @@ public class PredatorSystem extends CreatureSystem {
         float nearestDistance = Float.MAX_VALUE;
         for (Entity candidate : preyEntities) {
             PositionComponent candidatePos = candidate.getComponent(PositionComponent.class);
-            if (canSee(predatorPos, vision, candidatePos)) {
+            if (canSee(predatorPos, vision, candidate)) {
                 float distance = predatorPos.position.dst(candidatePos.position);
                 if (distance < nearestDistance) {
                     nearestDistance = distance;

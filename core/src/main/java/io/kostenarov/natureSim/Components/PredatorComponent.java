@@ -8,6 +8,8 @@ public class PredatorComponent implements Component {
     public float attackDamage = 40f;        // Damage dealt per bite
     public float attackCooldown = 0.75f;    // Seconds between bites
     public float attackTimer = 0f;          // Time until the next bite is ready
+    public float eatingDuration = 6f;       // Seconds spent eating after a kill (caps how fast one predator can kill)
+    public float eatingTimer = 0f;          // Time left eating the current kill
     public float killEnergyGain = 45f;      // Energy and food gained from a kill
     public float huntSpeedMultiplier = 1.35f;
     public float huntEnergyBufferMultiplier = 1.15f; // Hunt only when there's room for this much of a meal

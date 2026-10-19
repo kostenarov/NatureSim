@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NatureSim: High-Performance Evolutionary Simulation with Ashley ECS</title>
+    <!-- Tailwind CSS for modern responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Space Grotesk -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- FontAwesome for technical icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#05080b',
+                        panelBg: '#0b0f14',
+                        accentGreen: '#10b981',
+                        accentMint: '#34d399',
+                        accentBlue: '#3b82f6',
+                        accentOrange: '#f97316',
+                        borderGray: '#1a2430',
+                        terminalBg: '#020406'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Space Grotesk', 'sans-serif'],
+                        mono: ['Fira Code', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #05080b;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #05080b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1a2430;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #10b981;
+        }
+        .glow-green:hover {
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+        }
+    </style>
+</head>
+<body class="text-slate-300 min-h-screen p-4 lg:p-6 flex flex-col justify-between overflow-x-hidden">
+
+<header class="w-full max-w-7xl mx-auto mb-6 bg-panelBg border border-borderGray p-6 rounded-2xl relative overflow-hidden shadow-2xl">
+    <div class="absolute inset-0 opacity-5 pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px]"></div>
+    <div class="absolute top-0 right-0 w-96 h-96 bg-accentGreen opacity-10 rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="absolute bottom-0 left-0 w-96 h-96 bg-accentBlue opacity-5 rounded-full blur-[120px] pointer-events-none"></div>
+
+    <div class="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div>
+                <span class="text-accentGreen text-xs font-bold tracking-widest uppercase font-display flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-accentGreen animate-ping"></span>
+                    Fontys Semester 4 — Software Development Showcase
+                </span>
+            <h1 class="text-3xl lg:text-4xl font-bold font-display text-white mt-1.5 mb-2 tracking-tight">
+                NatureSim: <span class="bg-gradient-to-r from-accentMint to-accentGreen bg-clip-text text-transparent">Ashley ECS Engineering Cockpit</span>
+            </h1>
+            <p class="text-slate-400 text-sm max-w-3xl font-light">
+                An interactive demonstration of JVM cache locality, decouplet genetics, and dual-tier sensory hunting systems running within the <strong>Ashley ECS framework</strong>.
+            </p>
+        </div>
+        <div class="flex flex-wrap gap-3 shrink-0">
+            <a href="https://github.com/kostenarov/naturesim" target="_blank" class="bg-darkBg hover:bg-slate-900 border border-borderGray px-4 py-3 rounded-xl flex items-center gap-3 transition-all duration-300">
+                <i class="fa-brands fa-github text-xl text-accentGreen"></i>
+                <div class="text-left">
+                    <span class="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Repository</span>
+                    <span class="text-white text-xs font-mono font-semibold">kostenarov/naturesim</span>
+                </div>
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch mb-6">
+
+    <!-- ==================== COLUMN 1: JVM MEMORY PIPELINE ==================== -->
+    <section class="bg-panelBg border border-borderGray rounded-2xl p-5 shadow-xl flex flex-col gap-5 justify-between">
+        <div>
+            <div class="border-b border-borderGray pb-3 mb-4">
+                <span class="text-[10px] font-bold text-accentGreen uppercase tracking-widest">01 / Memory Architecture</span>
+                <h2 class="text-xl font-bold font-display text-white mt-0.5">CPU Cache Locality</h2>
+            </div>
+
+            <p class="text-slate-400 text-xs leading-relaxed mb-4">
+                Traditional OOP scatters independent agent instances across the JVM heap, causing violent address jumps. Organising fields contiguously transforms execution into a linear processing pipe.
+            </p>
+
+            <!-- Memory Pipeline Simulation Panel -->
+            <div class="bg-darkBg border border-borderGray rounded-xl p-4 flex flex-col gap-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">L1/L2 Cache Simulator</span>
+                    <span class="px-2 py-0.5 text-[9px] rounded bg-red-500/10 text-red-400 font-mono" id="sim-status">OOP Mode</span>
+                </div>
+
+                <!-- Visual Memory Blocks -->
+                <div class="grid grid-cols-8 gap-1 p-2 bg-terminalBg rounded-lg border border-borderGray/50" id="memory-strip">
+                    <!-- Instantiated dynamically -->
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="setMemoryMode('oop')" id="btn-oop" class="flex-1 py-1 px-3 text-xs font-semibold rounded-lg bg-red-600 text-white transition-all shadow-md">OOP (Scattered)</button>
+                    <button onclick="setMemoryMode('ecs')" id="btn-ecs" class="flex-1 py-1 px-3 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 transition-all hover:bg-slate-700">Ashley (Linear)</button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-center border-t border-borderGray pt-2 mt-1">
+                    <div class="p-2 bg-terminalBg/50 rounded">
+                        <span class="text-[9px] text-slate-500 block uppercase">Cache Hits</span>
+                        <span class="text-sm font-bold font-mono text-white transition-all duration-300" id="stat-cache">14%</span>
+                    </div>
+                    <div class="p-2 bg-terminalBg/50 rounded">
+                        <span class="text-[9px] text-slate-500 block uppercase">Estimated FPS</span>
+                        <span class="text-sm font-bold font-mono text-white transition-all duration-300" id="stat-fps">~28 FPS</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== COLUMN 2: ASHLEY ENGINE INTELLIGENCE ==================== -->
+    <section class="bg-panelBg border border-borderGray rounded-2xl p-5 shadow-xl flex flex-col justify-between gap-5">
+        <div>
+            <div class="border-b border-borderGray pb-3 mb-4">
+                <span class="text-[10px] font-bold text-accentGreen uppercase tracking-widest">02 / Dynamic Architecture</span>
+                <h2 class="text-xl font-bold font-display text-white mt-0.5">Ashley ECS Engine Matcher</h2>
+            </div>
+
+            <p class="text-slate-400 text-xs leading-relaxed mb-3">
+                Select components on the entity container to dynamically subscribe it to active engine systems based on <strong>Aspect Family Matchers</strong>:
+            </p>
+
+            <!-- Interactive Entity Customizer -->
+            <div class="bg-darkBg border border-borderGray rounded-xl p-3 flex flex-col gap-3">
+                <span class="text-[9px] font-semibold text-slate-400 uppercase tracking-wider block font-mono">Entity Component Layout</span>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <!-- Standard components with toggles -->
+                    <button onclick="toggleComponent('comp-pos')" id="comp-pos" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-accentGreen/10 border-accentGreen text-accentMint font-semibold">PositionComponent</button>
+                    <button onclick="toggleComponent('comp-vel')" id="comp-vel" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-accentGreen/10 border-accentGreen text-accentMint font-semibold">VelocityComponent</button>
+                    <button onclick="toggleComponent('comp-genome')" id="comp-genome" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-accentGreen/10 border-accentGreen text-accentMint font-semibold">GenomeComponent</button>
+                    <button onclick="toggleComponent('comp-stats')" id="comp-stats" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-accentGreen/10 border-accentGreen text-accentMint font-semibold">StatsComponent</button>
+                    <button onclick="toggleComponent('comp-pred')" id="comp-pred" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">PredatorComponent</button>
+                    <button onclick="toggleComponent('comp-repro')" id="comp-repro" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">ReproductionComponent</button>
+                    <button onclick="toggleComponent('comp-vision')" id="comp-vision" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">VisionComponent</button>
+                    <button onclick="toggleComponent('comp-gender')" id="comp-gender" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">GenderComponent</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Active System Match List -->
+        <div class="flex-grow flex flex-col justify-end">
+            <span class="text-[9px] font-semibold text-slate-400 uppercase tracking-widest block mb-2 font-mono">Family Match Output</span>
+            <div class="bg-terminalBg border border-borderGray rounded-xl p-4 min-h-[160px] flex flex-col gap-2 font-mono text-[11px]" id="engine-matcher-console">
+                <!-- Loaded dynamically in runtime -->
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== COLUMN 3: SENSORY BEHAVIOUR CANVAS ==================== -->
+    <section class="bg-panelBg border border-borderGray rounded-2xl p-5 shadow-xl flex flex-col justify-between gap-5 lg:col-span-1">
+        <div>
+            <div class="border-b border-borderGray pb-3 mb-4">
+                <span class="text-[10px] font-bold text-accentGreen uppercase tracking-widest">03 / Dual-Tier Hunting AI</span>
+                <h2 class="text-xl font-bold font-display text-white mt-0.5">Scent Trail & Vision</h2>
+            </div>
+
+            <p class="text-slate-400 text-xs leading-relaxed mb-3">
+                Watch below as the hunter locks onto lingering scent footprints left behind by prey in real-time.
+            </p>
+
+            <!-- Real-time Canvas Hunter Simulation -->
+            <div class="bg-darkBg border border-borderGray rounded-xl p-3 flex flex-col gap-2 relative">
+                <div class="flex justify-between items-center">
+                    <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Dynamic AI Simulator</span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-accentGreen animate-pulse" id="sensor-pulse"></span>
+                        <span class="text-[10px] text-slate-300 font-mono" id="hunter-state">Active: Vision</span>
+                    </div>
+                </div>
+
+                <div class="relative w-full aspect-[4/3] rounded-lg overflow-hidden border border-borderGray/50 bg-terminalBg">
+                    <canvas id="scent-canvas" class="w-full h-full block"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+
+<!-- ==================== ECOSYSTEM BENCHMARKS FOOTER ==================== -->
+<footer class="w-full max-w-7xl mx-auto bg-panelBg border border-borderGray p-5 rounded-2xl shadow-2xl">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
+        <div class="md:col-span-2 flex flex-col sm:flex-row gap-5 items-center md:items-start">
+            <div class="text-center sm:text-left">
+                <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold block">Maximum Tested Capacity</span>
+                <span class="text-2xl font-bold font-display text-white mt-1 block">1,000+ Agents</span>
+                <span class="text-accentGreen text-xs mt-1 block font-semibold font-mono"><i class="fa-solid fa-bolt"></i> GPU OpenGL Render via SpriteBatch</span>
+            </div>
+            <div class="h-px sm:h-12 w-full sm:w-px bg-borderGray my-2 sm:my-0"></div>
+            <div class="text-center sm:text-left">
+                <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold block">Framework Stack</span>
+                <span class="text-sm font-bold text-slate-200 mt-2 block font-display"><i class="fa-brands fa-java text-red-500"></i> Ashley ECS / LibGDX</span>
+                <span class="text-xs text-slate-500 block mt-0.5">Composition over inheritance</span>
+            </div>
+        </div>
+
+        <!-- Future Roadmap list -->
+        <div class="md:col-span-2 flex flex-col gap-2">
+            <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">Scaling Roadmap & Performance Milestones</span>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div class="flex items-center gap-2 bg-darkBg/60 border border-borderGray/50 p-2 rounded-lg">
+                    <i class="fa-solid fa-diagram-project text-accentMint text-sm shrink-0"></i>
+                    <div>
+                        <strong class="text-slate-300 block font-sans">Quadtree Partitioning</strong>
+                        <span class="text-slate-500 text-[9px] font-mono">Drop checks from O(N²) to O(N)</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 bg-darkBg/60 border border-borderGray/50 p-2 rounded-lg">
+                    <i class="fa-solid fa-dna text-accentBlue text-sm shrink-0"></i>
+                    <div>
+                        <strong class="text-slate-300 block font-sans">Biological Gestation</strong>
+                        <span class="text-slate-500 text-[9px] font-mono">Reproducing delay balances</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<!-- ==================== PIPELINE EXECUTION JAVASCRIPT ==================== -->
+<script>
+    // --- 01. ACTIVE COMPONENT CONFIGURATOR ---
+    const componentState = {
+        'comp-pos': true,
+        'comp-vel': true,
+        'comp-genome': true,
+        'comp-stats': true,
+        'comp-pred': false,
+        'comp-repro': false,
+        'comp-vision': false,
+        'comp-gender': false
+    };
+
+    function toggleComponent(id) {
+        componentState[id] = !componentState[id];
+        const btn = document.getElementById(id);
+        if (componentState[id]) {
+            btn.className = "px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-accentGreen/10 border-accentGreen text-accentMint font-semibold";
+        } else {
+            btn.className = "px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal";
+        }
+        updateAshleyMatcher();
+        pushConsoleEvent(`[Engine] Modified Entity configuration. Active: ${Object.keys(componentState).filter(k => componentState[k]).map(k => k.replace('comp-', '')).join(', ')}`);
+    }
+
+    function updateAshleyMatcher() {
+        const container = document.getElementById('engine-matcher-console');
+        container.innerHTML = '';
+
+        const matchedSystems = [
+            {
+                name: 'MovementSystem',
+                aspect: 'Aspect.all(PositionComponent.class, VelocityComponent.class)',
+                match: componentState['comp-pos'] && componentState['comp-vel']
+            },
+            {
+                name: 'VitalitySystem',
+                aspect: 'Aspect.all(StatsComponent.class)',
+                match: componentState['comp-stats']
+            },
+            {
+                name: 'PredatorSystem',
+                aspect: 'Aspect.all(PositionComponent.class, PredatorComponent.class, StatsComponent.class)',
+                match: componentState['comp-pos'] && componentState['comp-pred'] && componentState['comp-stats']
+            },
+            {
+                name: 'MatingSystem',
+                aspect: 'Aspect.all(PositionComponent.class, StatsComponent.class, ReproductionComponent.class, GenderComponent.class)',
+                match: componentState['comp-pos'] && componentState['comp-stats'] && componentState['comp-repro'] && componentState['comp-gender']
+            },
+            {
+                name: 'GeneticsSystem',
+                aspect: 'Aspect.all(GenomeComponent.class)',
+                match: componentState['comp-genome']
+            },
+            {
+                name: 'VisionRenderingSystem',
+                aspect: 'Aspect.all(PositionComponent.class, VisionComponent.class)',
+                match: componentState['comp-pos'] && componentState['comp-vision']
+            }
+        ];
+
+        let count = 0;
+        matchedSystems.forEach(sys => {
+            if (sys.match) {
+                count++;
+                const row = document.createElement('div');
+                row.className = "p-2 bg-darkBg border border-borderGray/60 rounded-lg flex flex-col gap-0.5 relative overflow-hidden group";
+                row.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-200 font-bold font-sans">${sys.name}</span>
+                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-accentGreen/10 text-accentMint font-semibold border border-accentGreen/20">Matched</span>
+                        </div>
+                        <span class="text-[9px] text-slate-500 font-mono mt-0.5">${sys.aspect}</span>
+                    `;
+                container.appendChild(row);
+            }
+        });
+
+        if (count === 0) {
+            container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center text-center h-full text-slate-500 py-6">
+                        <i class="fa-solid fa-triangle-exclamation text-xl mb-1 text-accentOrange/70"></i>
+                        <span>No Ashley Systems subscribed to this specific Aspect pattern.</span>
+                    </div>
+                `;
+        }
+    }
+
+
+    // --- 02. JVM MEMORY CACHE SIMULATOR ---
+    let memoryMode = 'oop';
+    let cellCounter = 0;
+
+    function initializeMemoryStrip() {
+        const strip = document.getElementById('memory-strip');
+        strip.innerHTML = '';
+        for (let i = 0; i < 16; i++) {
+            const block = document.createElement('div');
+            block.className = "aspect-square rounded border border-borderGray/45 bg-slate-900/60 transition-all duration-300 flex items-center justify-center text-[9px] font-mono font-bold text-slate-600";
+            block.innerText = "JVM";
+            strip.appendChild(block);
+        }
+    }
+
+    function setMemoryMode(mode) {
+        memoryMode = mode;
+        const btnOop = document.getElementById('btn-oop');
+        const btnEcs = document.getElementById('btn-ecs');
+        const status = document.getElementById('sim-status');
+
+        if (mode === 'oop') {
+            btnOop.className = "flex-1 py-1 px-3 text-xs font-semibold rounded-lg bg-red-600 text-white transition-all shadow-md";
+            btnEcs.className = "flex-1 py-1 px-3 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 transition-all hover:bg-slate-700";
+            status.innerText = "OOP Mode";
+            status.className = "px-2 py-0.5 text-[9px] rounded bg-red-500/10 text-red-400 font-mono";
+            pushConsoleEvent("[Environment] Performance downgraded to fragmented OOP. Heavy memory address hopping active.");
+        } else {
+            btnEcs.className = "flex-1 py-1 px-3 text-xs font-semibold rounded-lg bg-accentGreen text-darkBg transition-all shadow-md font-bold";
+            btnOop.className = "flex-1 py-1 px-3 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 transition-all hover:bg-slate-700";
+            status.innerText = "Ashley Mode";
+            status.className = "px-2 py-0.5 text-[9px] rounded bg-accentGreen/10 text-accentGreen font-mono";
+            pushConsoleEvent("[Environment] Upgraded to contiguous Ashley ECS memory lines. Linear caching optimized.");
+        }
+    }
+
+    function tickMemorySimulator() {
+        const strip = document.getElementById('memory-strip');
+        const cells = strip.children;
+        if (!cells.length) return;
+
+        // Clean active classes
+        for (let c of cells) {
+            c.className = "aspect-square rounded border border-borderGray/45 bg-slate-900/60 transition-all duration-300 flex items-center justify-center text-[9px] font-mono font-bold text-slate-600";
+        }
+
+        if (memoryMode === 'oop') {
+            // Fragmented random memory jumps
+            const activeIndex = Math.floor(Math.random() * cells.length);
+            const isMiss = Math.random() > 0.14;
+
+            cells[activeIndex].className = isMiss ?
+                "aspect-square rounded border border-red-500 bg-red-500/20 transition-all duration-150 flex items-center justify-center text-[8px] font-mono font-bold text-red-400 scale-105" :
+                "aspect-square rounded border border-accentGreen bg-accentGreen/20 transition-all duration-150 flex items-center justify-center text-[8px] font-mono font-bold text-accentMint scale-105";
+
+            cells[activeIndex].innerText = isMiss ? "MISS" : "HIT";
+
+            document.getElementById('stat-cache').innerText = "14%";
+            document.getElementById('stat-cache').className = "text-sm font-bold font-mono text-red-500";
+            document.getElementById('stat-fps').innerText = "28 FPS";
+        } else {
+            // Contiguous step streaming
+            cellCounter = (cellCounter + 1) % cells.length;
+            cells[cellCounter].className = "aspect-square rounded border border-accentGreen bg-accentGreen/35 transition-all duration-150 flex items-center justify-center text-[8px] font-mono font-bold text-accentMint scale-105";
+            cells[cellCounter].innerText = "HIT";
+
+            document.getElementById('stat-cache').innerText = "96%";
+            document.getElementById('stat-cache').className = "text-sm font-bold font-mono text-accentMint";
+            document.getElementById('stat-fps').innerText = "60 FPS";
+        }
+    }
+
+
+    // --- 03. SCENT TRAIL AI CANVAS SIMULATION ---
+    const canvas = document.getElementById('scent-canvas');
+    const ctx = canvas.getContext('2d');
+
+    let predator, prey, obstacle;
+    let scentFootprints = [];
+    let simulationTime = 0;
+    let activeScaleModifier = 1.0;
+
+    function initScentSimulation() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+
+        predator = { x: 40, y: 120, speed: 2.1, mode: 'Vision' };
+        prey = { x: canvas.width - 50, y: 120, speed: 1.6 };
+        obstacle = { x: canvas.width / 2, y: 120, width: 40, height: 100 };
+        scentFootprints = [];
+        simulationTime = 0;
+    }
+
+    function resetScentSimulation() {
+        initScentSimulation();
+        pushConsoleEvent("[Ashley Engine] Resetting active sensory coordinate buffers.");
+    }
+
+    function toggleObstacle() {
+        obstacle.y = obstacle.y === 120 ? 80 : 120;
+        pushConsoleEvent(`[PredatorSystem] Obstacle block adjusted to Y: ${obstacle.y}. Real-time sensory paths re-computing.`);
+    }
+
+    function lineIntersectsRect(p1, p2, r) {
+        const minX = r.x - r.width / 2;
+        const maxX = r.x + r.width / 2;
+        const minY = r.y - r.height / 2;
+        const maxY = r.y + r.height / 2;
+
+        // Broad-phase segment line check
+        if (Math.min(p1.x, p2.x) > maxX || Math.max(p1.x, p2.x) < minX ||
+            Math.min(p1.y, p2.y) > maxY || Math.max(p1.y, p2.y) < minY) {
+            return false;
+        }
+        return true;
+    }
+
+    function tickScentSimulation() {
+        if (!canvas.width) return;
+
+        // Clear frame
+        ctx.fillStyle = '#020406';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw obstacle
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(obstacle.x - obstacle.width / 2, obstacle.y - obstacle.height / 2, obstacle.width, obstacle.height);
+
+        // Move prey slowly in wavy path
+        simulationTime += 0.02 * activeScaleModifier;
+        prey.y = 120 + Math.sin(simulationTime * 2.5) * 55;
+
+        // Loop coordinate sweeps
+        if (prey.x < 40 || prey.x > canvas.width - 20) {
+            prey.x = canvas.width - 50;
+        }
+
+        // Drop lingering scent footprint footprints
+        if (Math.random() < 0.2) {
+            scentFootprints.push({ x: prey.x, y: prey.y, strength: 1.0 });
+        }
+
+        // Fade and cleanup footprints
+        scentFootprints.forEach(p => p.strength -= 0.007);
+        scentFootprints = scentFootprints.filter(p => p.strength > 0);
+
+        // Draw footprint trail dots (Orange glows)
+        scentFootprints.forEach(p => {
+            ctx.fillStyle = `rgba(249, 115, 22, ${p.strength * 0.75})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Vision vector checks
+        const isLosBlocked = lineIntersectsRect(predator, prey, obstacle);
+        let stateText = '';
+        let stateColor = '';
+
+        if (!isLosBlocked) {
+            // Visual Line of Sight hunting
+            predator.mode = 'Vision';
+            stateText = 'LOS Track: Active';
+            stateColor = '#10b981';
+
+            const targetAngle = Math.atan2(prey.y - predator.y, prey.x - predator.x);
+            predator.x += Math.cos(targetAngle) * predator.speed * activeScaleModifier;
+            predator.y += Math.sin(targetAngle) * predator.speed * activeScaleModifier;
+
+            // Sight projection line
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(predator.x, predator.y);
+            ctx.lineTo(prey.x, prey.y);
+            ctx.stroke();
+
+            document.getElementById('sensor-pulse').className = 'w-2 h-2 rounded-full bg-accentGreen animate-pulse';
+        } else {
+            // Obstruction detected -> Shift into Omnidirectional Scent Homing
+            predator.mode = 'Scent';
+            stateText = 'Scent Tracking Homing';
+            stateColor = '#f97316';
+
+            // Locate the strongest nearby scent footprint
+            let strongestFootprint = null;
+            let minDistance = 9999;
+            scentFootprints.forEach(p => {
+                const d = Math.hypot(p.x - predator.x, p.y - predator.y);
+                if (d < minDistance && d < 120) { // Limit local tracking sweep radius
+                    minDistance = d;
+                    strongestFootprint = p;
+                }
+            });
+
+            if (strongestFootprint) {
+                // Navigate to footprints
+                const trailAngle = Math.atan2(strongestFootprint.y - predator.y, strongestFootprint.x - predator.x);
+                predator.x += Math.cos(trailAngle) * predator.speed * activeScaleModifier;
+                predator.y += Math.sin(trailAngle) * predator.speed * activeScaleModifier;
+
+                // Draw tracking laser to trail coordinate
+                ctx.strokeStyle = 'rgba(249, 115, 22, 0.7)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([2, 2]);
+                ctx.beginPath();
+                ctx.moveTo(predator.x, predator.y);
+                ctx.lineTo(strongestFootprint.x, strongestFootprint.y);
+                ctx.stroke();
+            } else {
+                // Wander around obstacle corner to look for trails
+                const fallbackAngle = Math.atan2((obstacle.y - obstacle.height / 2 - 15) - predator.y, obstacle.x - predator.x);
+                predator.x += Math.cos(fallbackAngle) * predator.speed * activeScaleModifier;
+                predator.y += Math.sin(fallbackAngle) * predator.speed * activeScaleModifier;
+            }
+
+            document.getElementById('sensor-pulse').className = 'w-2 h-2 rounded-full bg-accentOrange animate-ping';
+        }
+
+        // Draw Predator (Green Circle)
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(predator.x, predator.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Scent sensor limit ring
+        ctx.strokeStyle = predator.mode === 'Vision' ? 'rgba(52, 211, 153, 0.08)' : 'rgba(249, 115, 22, 0.15)';
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(predator.x, predator.y, 80, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw Prey (Orange Circle)
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.arc(prey.x, prey.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // DOM Feedback updates
+        document.getElementById('hunter-state').innerText = stateText;
+        document.getElementById('hunter-state').style.color = stateColor;
+
+        // Reset loop if caught
+        const distance = Math.hypot(prey.x - predator.x, prey.y - predator.y);
+        if (distance < 12) {
+            pushConsoleEvent("[Ashley Engine] PredatorSystem: Prey caught. Resetting tracking array.");
+            initScentSimulation();
+        }
+    }
+
+
+    // --- 04. LOGGING TERMINAL CONSOLE ---
+    // UI logging removed per user request. Functions stubbed to preserve compatibility.
+    function pushConsoleEvent(text) {
+        // No-op (Real-time terminal has been removed from the layout)
+    }
+
+    function updateEnvironmentRate(type, value) {
+        if (type === 'mutation') {
+            const el = document.getElementById('val-mutation');
+            if (el) el.innerText = `${value}%`;
+            pushConsoleEvent(`[Environment] ReproductionMutationRate adjusted to: ${value}%`);
+        } else if (type === 'metabolic') {
+            const el = document.getElementById('val-metabolic');
+            const multiplier = (value / 10).toFixed(1);
+            if (el) el.innerText = `${multiplier}x`;
+            activeScaleModifier = value / 10;
+            pushConsoleEvent(`[Environment] Global MetabolicDecayMultiplier updated to: ${multiplier}x`);
+        }
+    }
+
+    // --- 05. BOOTSTRAP ENGINE ---
+    window.onload = function() {
+        initializeMemoryStrip();
+        updateAshleyMatcher();
+        initScentSimulation();
+
+        // Execute core visual engine loops
+        setInterval(tickMemorySimulator, 200);
+        setInterval(tickScentSimulation, 1000 / 60);
+
+        pushConsoleEvent("[Ashley Engine] Initialized systems pipeline.");
+        pushConsoleEvent("[LibGDX Render] OpenGL contexts attached successfully to GPU.");
+    }
+
+    window.onresize = function() {
+        initScentSimulation();
+    }
+</script>
+</body>
+</html>

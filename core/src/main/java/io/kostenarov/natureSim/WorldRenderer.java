@@ -43,7 +43,8 @@ public class WorldRenderer implements Disposable {
     private final TextureRegion tileRegion;
 
     // Colors are created once; allocating them per creature per frame made a lot of garbage
-    private final Color waterColor = new Color(0.20f, 0.45f, 0.85f, 0.85f);
+    private final Color shallowWaterColor = new Color(0.35f, 0.65f, 0.90f, 0.75f);
+    private final Color deepWaterColor = new Color(0.10f, 0.28f, 0.70f, 0.95f);
     private final Color shoreColor = new Color(0.75f, 0.68f, 0.45f, 1f);
     private final Color visionColor = new Color(0.72f, 0.62f, 0.42f, 0.22f); // Sandy tone, 22% opacity
     private final Color visionFillColor = new Color(0.72f, 0.62f, 0.42f, 0.12f);
@@ -152,7 +153,9 @@ public class WorldRenderer implements Disposable {
             PositionComponent pos = pond.getComponent(PositionComponent.class);
             float radius = pond.getComponent(WaterSourceComponent.class).radius;
             if (isVisible(pos.position.x, pos.position.y, radius)) {
-                drawFilledCircle(pos.position.x, pos.position.y, radius, waterColor);
+                // Light shallows creatures can wade into, around darker deep water they can't enter
+                drawFilledCircle(pos.position.x, pos.position.y, radius, shallowWaterColor);
+                drawFilledCircle(pos.position.x, pos.position.y, WaterSourceSystem.deepRadius(pond), deepWaterColor);
                 drawCircleOutline(pos.position.x, pos.position.y, radius, shoreColor);
             }
         }

@@ -18,4 +18,9 @@ public class BehaviourComponent implements Component {
     public boolean waitingAtTarget = false;
     public float waitAtTargetTimer = 0f;
     public static final float WAIT_AT_TARGET_DURATION = 0.5f;
+
+    // Prey keep running from a threat for a while after losing sight of it (turning away to flee hides it)
+    public final Vector2 lastThreat = new Vector2();
+    public float fleeTimer = 0f;
+    public static final float FLEE_MEMORY = 2f;
 }

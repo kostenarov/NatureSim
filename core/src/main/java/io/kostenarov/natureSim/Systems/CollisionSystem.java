@@ -11,6 +11,7 @@ import com.badlogic.gdx.math.Vector2;
 import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
+import io.kostenarov.natureSim.Components.VelocityComponent;
 
 import java.util.Arrays;
 
@@ -26,6 +27,7 @@ public class CollisionSystem extends EntitySystem {
     private static final int SOLVER_PASSES = 4; // Extra passes let tight crowds settle within a few frames
 
     private final ComponentMapper<PositionComponent> positionMapper = ComponentMapper.getFor(PositionComponent.class);
+    private final ComponentMapper<VelocityComponent> velocityMapper = ComponentMapper.getFor(VelocityComponent.class);
 
     private ImmutableArray<Entity> bodies;
     private int columns;
@@ -33,6 +35,7 @@ public class CollisionSystem extends EntitySystem {
     private int[] cellHead;            // First body index in each cell, or -1
     private int[] nextInCell = new int[0];
     private Vector2[] positions = new Vector2[0];
+    private boolean[] anchored = new boolean[0]; // Standing still this step (resting, eating, drinking)
 
     @Override
     public void addedToEngine(Engine engine) {
@@ -49,9 +52,13 @@ public class CollisionSystem extends EntitySystem {
         if (nextInCell.length < count) {
             nextInCell = new int[count * 2];
             positions = new Vector2[count * 2];
+            anchored = new boolean[count * 2];
         }
         for (int i = 0; i < count; i++) {
-            positions[i] = positionMapper.get(bodies.get(i)).position;
+            Entity body = bodies.get(i);
+            positions[i] = positionMapper.get(body).position;
+            VelocityComponent velocity = velocityMapper.get(body);
+            anchored[i] = velocity != null && velocity.velocity.isZero();
         }
 
         for (int pass = 0; pass < SOLVER_PASSES; pass++) {
@@ -87,7 +94,7 @@ public class CollisionSystem extends EntitySystem {
                     }
                     for (int j = cellHead[cellIndex(neighbourColumn, neighbourRow)]; j != -1; j = nextInCell[j]) {
                         if (j > i) {
-                            separate(positions[i], positions[j]);
+                            separate(i, j);
                         }
                     }
                 }
@@ -99,7 +106,9 @@ public class CollisionSystem extends EntitySystem {
         }
     }
 
-    private void separate(Vector2 a, Vector2 b) {
+    private void separate(int i, int j) {
+        Vector2 a = positions[i];
+        Vector2 b = positions[j];
         float dx = b.x - a.x;
         float dy = b.y - a.y;
         float distanceSquared = dx * dx + dy * dy;
@@ -120,10 +129,15 @@ public class CollisionSystem extends EntitySystem {
             normalY = dy / distance;
         }
 
-        // Each creature moves half of the overlap away from the other.
-        float push = (MIN_DISTANCE - distance) / 2f;
-        a.sub(normalX * push, normalY * push);
-        b.add(normalX * push, normalY * push);
+        // Resting creatures hold their ground: whoever is moving gets pushed around them.
+        // Two moving (or two resting) creatures each move half of the overlap.
+        float overlap = MIN_DISTANCE - distance;
+        float shareA = 0.5f;
+        if (anchored[i] != anchored[j]) {
+            shareA = anchored[i] ? 0f : 1f;
+        }
+        a.sub(normalX * overlap * shareA, normalY * overlap * shareA);
+        b.add(normalX * overlap * (1f - shareA), normalY * overlap * (1f - shareA));
     }
 
     private void clampToMap(Vector2 position) {

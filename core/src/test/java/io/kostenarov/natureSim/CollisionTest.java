@@ -51,4 +51,20 @@ class CollisionTest extends SimTestSupport {
         System.out.printf("crowd of 1000: min distance %.2f (target 26), %.3f ms/frame%n", minD, ms);
         assertTrue(minD >= 25.5f, String.format("min distance %.2f (target 26)", minD));
     }
+
+    @Test
+    @DisplayName("a resting creature holds its ground; whoever walks into it gets pushed instead")
+    void restingCreaturesStayPut() {
+        Engine e = new Engine();
+        e.addSystem(new CollisionSystem());
+        Entity resting = creature(e, 500, 500, Gender.MALE, false);
+        resting.getComponent(io.kostenarov.natureSim.Components.VelocityComponent.class).velocity.setZero();
+        Entity walker = creature(e, 510, 500, Gender.FEMALE, false); // Overlapping, still moving
+
+        e.update(DT);
+        PositionComponent restingPos = resting.getComponent(PositionComponent.class);
+        assertEquals(500f, restingPos.position.x, 0.0001f, "resting creature not pushed");
+        assertEquals(500f, restingPos.position.y, 0.0001f, "resting creature not pushed");
+        assertTrue(distance(resting, walker) >= 25.9f, "walker pushed clear: " + distance(resting, walker));
+    }
 }

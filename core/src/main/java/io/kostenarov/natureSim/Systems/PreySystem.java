@@ -148,18 +148,28 @@ public class PreySystem extends CreatureSystem {
 
     // --- Predators --------------------------------------------------------------------------------------
 
+    @Override
+    protected void processEntity(Entity entity, float deltaTime) {
+        BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
+        behaviour.fleeTimer = Math.max(0f, behaviour.fleeTimer - deltaTime);
+        super.processEntity(entity, deltaTime);
+    }
+
     /**
      * Works out the escape direction into {@code tmp}: away from every visible predator (closer ones count
-     * more) and away from nearby map edges, so prey don't get pinned against a wall.
-     * Returns false if no predator is in sight.
+     * more) and along nearby map edges, so prey don't get pinned against a wall. A prey that has just lost
+     * sight of a predator keeps running from where it last saw it; otherwise turning away to flee would hide
+     * the predator, the prey would turn back, see it again, and twitch on the spot.
+     * Returns false if there is no threat.
      */
     private boolean fleeDirection(Entity prey) {
         PositionComponent preyPos = prey.getComponent(PositionComponent.class);
         VisionComponent vision = prey.getComponent(VisionComponent.class);
+        BehaviourComponent behaviour = prey.getComponent(BehaviourComponent.class);
 
         float awayX = 0f;
         float awayY = 0f;
-        boolean threatened = false;
+        float nearestDistanceSquared = Float.MAX_VALUE;
         for (Entity predator : predatorEntities) {
             if (!canSee(preyPos, vision, predator)) {
                 continue;
@@ -171,9 +181,18 @@ public class PreySystem extends CreatureSystem {
             // Unit vector away from the predator, weighted by 1/distance
             awayX += dx / distanceSquared;
             awayY += dy / distanceSquared;
-            threatened = true;
+            if (distanceSquared < nearestDistanceSquared) {
+                nearestDistanceSquared = distanceSquared;
+                behaviour.lastThreat.set(predatorPos.position);
+            }
         }
-        if (!threatened) {
+
+        if (nearestDistanceSquared < Float.MAX_VALUE) {
+            behaviour.fleeTimer = BehaviourComponent.FLEE_MEMORY;
+        } else if (behaviour.fleeTimer > 0f) {
+            awayX = preyPos.position.x - behaviour.lastThreat.x; // Out of sight, but not forgotten
+            awayY = preyPos.position.y - behaviour.lastThreat.y;
+        } else {
             return false;
         }
 

@@ -113,4 +113,27 @@ class BehaviourTest extends SimTestSupport {
         assertTrue(Math.abs(pos.position.y - 2000) > 100f, "slid along the wall, y moved " + (pos.position.y - 2000));
         assertTrue(pos.position.x < 150f, "didn't run back toward the predator, x " + pos.position.x);
     }
+
+    @Test
+    @DisplayName("fleeing prey keep running instead of twitching between fleeing and other behaviours")
+    void fleeingIsSteady() {
+        Engine e = new Engine();
+        e.addSystem(new PreySystem());
+        Entity prey = creature(e, 1000, 1000, Gender.MALE, false);
+        face(prey, 0f);
+        stats(prey).hunger = 20f;                  // Also hungry, so it has a reason to turn back
+        food(e, 1100, 1000);                       // ...toward food next to the predator
+        creature(e, 1150, 1000, Gender.MALE, true); // Predator in sight to the east; nothing moves it here
+
+        int changes = 0;
+        EntityBehaviour previous = null;
+        for (int frame = 0; frame < 60; frame++) {
+            e.update(DT);
+            EntityBehaviour now = prey.getComponent(BehaviourComponent.class).behaviour;
+            if (previous != null && now != previous) changes++;
+            previous = now;
+        }
+        assertEquals(EntityBehaviour.FLEEING, previous, "still fleeing after a second");
+        assertEquals(0, changes, "behaviour changes while fleeing");
+    }
 }

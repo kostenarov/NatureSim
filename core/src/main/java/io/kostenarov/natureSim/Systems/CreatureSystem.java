@@ -35,6 +35,7 @@ public abstract class CreatureSystem extends IteratingSystem {
     private static final float WATERHOLE_RANGE = 300f;
 
     protected final Vector2 tmp = new Vector2(); // Scratch vector, avoids allocating every frame
+    private final Vector2 heading = new Vector2();
     protected final Array<Entity> nearby = new Array<>(false, 64); // Scratch list for grid queries
     private final Vector2 waterTarget = new Vector2();
     private ImmutableArray<Entity> waterEntities;
@@ -160,6 +161,7 @@ public abstract class CreatureSystem extends IteratingSystem {
         behaviour.targetPoint.set(
             MathUtils.clamp(targetX, 0f, World.WIDTH - World.CREATURE_SIZE),
             MathUtils.clamp(targetY, 0f, World.HEIGHT - World.CREATURE_SIZE));
+        WaterSourceSystem.pushOutOfDeepWater(waterEntities, behaviour.targetPoint); // Never aim into deep water
         behaviour.hasTarget = true;
     }
 
@@ -274,8 +276,12 @@ public abstract class CreatureSystem extends IteratingSystem {
         PositionComponent pos = entity.getComponent(PositionComponent.class);
         VelocityComponent vel = entity.getComponent(VelocityComponent.class);
 
-        vel.velocity.set(directionX * speed, directionY * speed);
+        // Deep water can't be crossed: slide along its edge, i.e. walk around the pond
+        heading.set(directionX, directionY);
+        WaterSourceSystem.slideAlongDeepWater(waterEntities, pos.position, heading, speed * deltaTime);
+        vel.velocity.set(heading.x * speed, heading.y * speed);
         pos.position.mulAdd(vel.velocity, deltaTime);
+        WaterSourceSystem.pushOutOfDeepWater(waterEntities, pos.position);
 
         boolean hitBoundary = clampToMap(pos);
         if (!hitBoundary && !vel.velocity.isZero()) {

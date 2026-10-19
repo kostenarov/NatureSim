@@ -15,6 +15,7 @@ import io.kostenarov.natureSim.Systems.PopulationHistory;
 import io.kostenarov.natureSim.Systems.PredatorSystem;
 import io.kostenarov.natureSim.Systems.PreySystem;
 import io.kostenarov.natureSim.Systems.SpatialIndexSystem;
+import io.kostenarov.natureSim.Systems.WaterBarrierSystem;
 import io.kostenarov.natureSim.Systems.WaterSourceSystem;
 
 /**
@@ -41,6 +42,7 @@ public final class Simulation {
         if (config.collisionEnabled) {
             engine.addSystem(new CollisionSystem());
         }
+        engine.addSystem(new WaterBarrierSystem());        // After collisions: nobody ends up in deep water
         engine.addSystem(new DeathSystem());
         engine.addSystem(new PopulationHistory());
         return engine;

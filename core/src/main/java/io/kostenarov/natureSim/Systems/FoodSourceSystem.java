@@ -16,6 +16,7 @@ public class FoodSourceSystem extends EntitySystem {
     private static final float FOOD_SIZE = 16f;
     private static final float NEAR_WATER_CHANCE = 0.7f;      // Most food grows in the fertile band around ponds
     private static final float FERTILE_BAND_WIDTH = 350f;     // How far from the shore that band reaches
+    private static final int MAX_PLACEMENT_ATTEMPTS = 20;
 
     private final int initialFood;
     private final int maxFood;
@@ -66,10 +67,26 @@ public class FoodSourceSystem extends EntitySystem {
     }
 
     private void spawnFoodSource() {
-        Entity food = getEngine().createEntity();
-
-        PositionComponent pos = new PositionComponent();
         ImmutableArray<Entity> ponds = getEngine().getEntitiesFor(WaterSourceSystem.WATER_FAMILY);
+        PositionComponent pos = new PositionComponent();
+
+        // Food never grows in deep water, where nobody could reach it
+        int attempts = 0;
+        do {
+            pickFoodPosition(ponds, pos);
+        } while (WaterSourceSystem.isInDeepWater(ponds, pos.position.x + FOOD_SIZE / 2f, pos.position.y + FOOD_SIZE / 2f, FOOD_SIZE)
+            && ++attempts < MAX_PLACEMENT_ATTEMPTS);
+        if (attempts == MAX_PLACEMENT_ATTEMPTS) {
+            return;
+        }
+
+        Entity food = getEngine().createEntity();
+        food.add(pos);
+        food.add(new FoodSourceComponent());
+        getEngine().addEntity(food);
+    }
+
+    private void pickFoodPosition(ImmutableArray<Entity> ponds, PositionComponent pos) {
         if (ponds.size() > 0 && MathUtils.random() < NEAR_WATER_CHANCE) {
             // Fertile ground: a band around a random pond's shore
             Entity pond = ponds.random();
@@ -86,12 +103,6 @@ public class FoodSourceSystem extends EntitySystem {
                 MathUtils.random(0, World.HEIGHT - FOOD_SIZE)
             );
         }
-        food.add(pos);
-
-        FoodSourceComponent foodComp = new FoodSourceComponent();
-        food.add(foodComp);
-
-        getEngine().addEntity(food);
     }
 }
 

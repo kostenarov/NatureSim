@@ -6,8 +6,10 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
 import io.kostenarov.natureSim.Components.*;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
+import io.kostenarov.natureSim.Traits;
 
 public class MovementSystem extends IteratingSystem {
     // Map boundaries
@@ -22,19 +24,12 @@ public class MovementSystem extends IteratingSystem {
     private static final float ENERGY_STOP_THRESHOLD = 3f;
     private static final float ENERGY_RESUME_THRESHOLD = 30f;
 
-    private static final float FOOD_SEEK_THRESHOLD = 60f; // Seek food when hunger drops below this
     private static final float FOOD_CONSUMPTION_DISTANCE = 32f; // How close to be to eat food
     private static final float PREY_ESCAPE_SPEED_MULTIPLIER = 1.25f;
 
-    // Base per-second rates (before genome modifiers). Using per-second makes behavior stable regardless of frame rate.
-    // Individual agents will have these rates scaled by their genome genes.
-    private static final float BASE_HUNGER_DECREASE_PER_SEC = 0.12f;
-    private static final float BASE_THIRST_DECREASE_PER_SEC = 0.06f;
-    private static final float BASE_ENERGY_DECREASE_PER_SEC = 3f;
-    private static final float BASE_ENERGY_RECOVER_PER_SEC = 4f;
-    private static final float BASE_HEALTH_DECREASE_PER_SEC = 12f;
-
     private ImmutableArray<Entity> foodEntities;
+    private ImmutableArray<Entity> waterEntities;
+    private final Vector2 waterTarget = new Vector2();
 
     public MovementSystem() {
         super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class, GenderComponent.class, StatsComponent.class, BehaviourComponent.class).exclude(PredatorComponent.class).get());
@@ -44,6 +39,7 @@ public class MovementSystem extends IteratingSystem {
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
         foodEntities = engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get());
+        waterEntities = engine.getEntitiesFor(WaterSourceSystem.WATER_FAMILY);
     }
 
     @Override
@@ -71,11 +67,17 @@ public class MovementSystem extends IteratingSystem {
             return EntityBehaviour.FLEEING;
         }
 
-        // Check critical needs first
-        if (stats.hunger < FOOD_SEEK_THRESHOLD) {
-            return EntityBehaviour.SEEKING_FOOD;
-        } else if (stats.thirst < 30f) {
+        // Check critical needs first. Once drinking, keep drinking until fully quenched.
+        // How early a creature reacts to hunger and thirst is genetic (see Traits).
+        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
+        boolean keepDrinking = behaviour.behaviour == EntityBehaviour.SEEKING_WATER && stats.thirst < WaterSourceSystem.WATER_FULL_THRESHOLD;
+        boolean thirsty = stats.thirst < Traits.waterSeekThreshold(dna);
+        boolean hungry = stats.hunger < Traits.foodSeekThreshold(dna);
+        if (keepDrinking || (thirsty && (!hungry || stats.thirst < stats.hunger))) {
             return EntityBehaviour.SEEKING_WATER;
+        }
+        if (hungry) {
+            return EntityBehaviour.SEEKING_FOOD;
         }
 
         // If currently resting, keep resting until resume threshold is reached.
@@ -106,8 +108,8 @@ public class MovementSystem extends IteratingSystem {
         }
 
         if (behaviour == EntityBehaviour.SEEKING_WATER) {
-            // TODO: Implement water seeking logic (e.g., move towards nearest water source)
-            vel.velocity.set(0f, 0f);
+            seekWater(entity, deltaTime);
+            decreaseStats(entity, deltaTime);
             return;
         }
 
@@ -164,7 +166,7 @@ public class MovementSystem extends IteratingSystem {
 
         if (behaviour.hasTarget) {
             float distanceToTarget = pos.position.dst(behaviour.targetPoint);
-            float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
+            float speedMultiplier = Traits.speed(dna);
             float step = speedMultiplier * deltaTime;
 
             if (step >= distanceToTarget) {
@@ -236,14 +238,7 @@ public class MovementSystem extends IteratingSystem {
     }
 
     private void recoverEnergy(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        if (stats != null && dna != null) {
-            // Each agent recovers energy at a rate based on their RECOVERY_RATE gene
-            // genes are typically 0-2, so recovery ranges from BASE to BASE * 2
-            float recoveryRate = BASE_ENERGY_RECOVER_PER_SEC * (0.5f + dna.genes[GenomeComponent.RECOVERY_RATE]);
-            stats.energy = Math.min(100f, stats.energy + recoveryRate * deltaTime);
-        }
+        Traits.rest(entity.getComponent(StatsComponent.class), entity.getComponent(GenomeComponent.class), false, deltaTime);
     }
 
     public static float getMapMaxX() {
@@ -255,32 +250,7 @@ public class MovementSystem extends IteratingSystem {
     }
 
     private void decreaseStats(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        if (stats != null && dna != null) {
-            // Each agent's stat decrease rates are scaled by their genome genes
-            // genes are typically 0-2, so rates range from BASE * 0.5 to BASE * 2
-            float hungerRate = BASE_HUNGER_DECREASE_PER_SEC * (0.5f + dna.genes[GenomeComponent.HUNGER_SENSITIVITY]);
-            float thirstRate = BASE_THIRST_DECREASE_PER_SEC * (0.5f + dna.genes[GenomeComponent.THIRST_SENSITIVITY]);
-            float energyRate = BASE_ENERGY_DECREASE_PER_SEC * (0.5f + dna.genes[GenomeComponent.METABOLISM]);
-
-            stats.hunger = Math.max(0f, stats.hunger - hungerRate * deltaTime);
-            stats.thirst = Math.max(0f, stats.thirst - thirstRate * deltaTime);
-            stats.energy = Math.max(0f, stats.energy - energyRate * deltaTime);
-        }
-        decreaseHealth(entity, deltaTime);
-    }
-
-    private void decreaseHealth(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        if (stats != null && dna != null) {
-            if (stats.hunger <= 0f || stats.thirst <= 0f) {
-                // Health loss rate is also scaled by metabolism (more efficient agents lose health slower)
-                float healthLossRate = BASE_HEALTH_DECREASE_PER_SEC / (0.5f + dna.genes[GenomeComponent.METABOLISM]);
-                stats.health = Math.max(0f, stats.health - healthLossRate * deltaTime);
-            }
-        }
+        Traits.burnActive(entity.getComponent(StatsComponent.class), entity.getComponent(GenomeComponent.class), false, deltaTime);
     }
 
     private void pickTargetPointInVisibleArea(Entity entity) {
@@ -332,6 +302,9 @@ public class MovementSystem extends IteratingSystem {
 
         if (foodEntities != null) {
             for (Entity food : foodEntities) {
+                if (food.getComponent(FoodSourceComponent.class).consumed) {
+                    continue; // Already eaten this frame, removed next frame
+                }
                 PositionComponent foodPos = food.getComponent(PositionComponent.class);
                 float distance = pos.position.dst(foodPos.position);
                 if (distance < nearestDistance) {
@@ -352,8 +325,8 @@ public class MovementSystem extends IteratingSystem {
                 vel.velocity.set(0f, 0f);
             } else {
                 // Move toward the food
-                com.badlogic.gdx.math.Vector2 direction = new com.badlogic.gdx.math.Vector2(foodPos.position).sub(pos.position).nor();
-                float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
+                Vector2 direction = new Vector2(foodPos.position).sub(pos.position).nor();
+                float speedMultiplier = Traits.speed(dna);
                 vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
 
                 updatePosition(pos, vel, deltaTime);
@@ -364,6 +337,30 @@ public class MovementSystem extends IteratingSystem {
             // No food found, just stop and wait
             vel.velocity.set(0f, 0f);
         }
+    }
+
+    private void seekWater(Entity entity, float deltaTime) {
+        PositionComponent pos = entity.getComponent(PositionComponent.class);
+        VelocityComponent vel = entity.getComponent(VelocityComponent.class);
+        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
+        StatsComponent stats = entity.getComponent(StatsComponent.class);
+
+        Entity pond = WaterSourceSystem.findNearestWater(waterEntities, pos);
+        if (pond == null) {
+            vel.velocity.set(0f, 0f);
+            return;
+        }
+
+        if (WaterSourceSystem.canDrinkFrom(pond, pos)) {
+            vel.velocity.set(0f, 0f);
+            WaterSourceSystem.drink(stats, deltaTime);
+            return;
+        }
+
+        moveTowardTarget(entity, WaterSourceSystem.approachPoint(pond, waterTarget), dna);
+        updatePosition(pos, vel, deltaTime);
+        constrainPositionToBounds(pos);
+        updateVisionDirection(entity);
     }
 
     private void fleeFromPredator(Entity prey, float deltaTime) {
@@ -378,8 +375,8 @@ public class MovementSystem extends IteratingSystem {
         }
 
         PositionComponent predatorPos = threateningPredator.getComponent(PositionComponent.class);
-        com.badlogic.gdx.math.Vector2 direction = new com.badlogic.gdx.math.Vector2(preyPos.position).sub(predatorPos.position).nor();
-        float speedMultiplier = (50f + (dna.genes[GenomeComponent.SPEED] * 200f)) * PREY_ESCAPE_SPEED_MULTIPLIER;
+        Vector2 direction = new Vector2(preyPos.position).sub(predatorPos.position).nor();
+        float speedMultiplier = Traits.speed(dna) * PREY_ESCAPE_SPEED_MULTIPLIER;
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
 
         updatePosition(preyPos, vel, deltaTime);
@@ -440,15 +437,15 @@ public class MovementSystem extends IteratingSystem {
         return normalized;
     }
 
-    private void moveTowardTarget(Entity entity, com.badlogic.gdx.math.Vector2 targetPoint, GenomeComponent dna) {
+    private void moveTowardTarget(Entity entity, Vector2 targetPoint, GenomeComponent dna) {
         PositionComponent pos = entity.getComponent(PositionComponent.class);
         VelocityComponent vel = entity.getComponent(VelocityComponent.class);
 
         // Calculate direction from current position to target
-        com.badlogic.gdx.math.Vector2 direction = new com.badlogic.gdx.math.Vector2(targetPoint).sub(pos.position).nor();
+        Vector2 direction = new Vector2(targetPoint).sub(pos.position).nor();
 
         // Apply speed multiplier from genome
-        float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
+        float speedMultiplier = Traits.speed(dna);
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
     }
 }

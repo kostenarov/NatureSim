@@ -7,16 +7,29 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
 import io.kostenarov.natureSim.Components.*;
+import io.kostenarov.natureSim.SimulationConfig;
+import io.kostenarov.natureSim.Traits;
 
 public class MatingSystem extends EntitySystem {
     private ImmutableArray<Entity> matingEntities;
     private Engine engine;
 
-    // Mutation settings
-    private static final float MUTATION_RATE = 0.15f;      // 15% chance to mutate each gene
-    private static final float MUTATION_AMOUNT = 0.3f;     // Max amount to mutate by
     private static final float GENE_MIN = 0f;
     private static final float GENE_MAX = 2f;
+
+    private final float matingCooldown;   // Seconds between matings for one creature
+    private final float mutationRate;     // Chance to mutate each gene
+    private final float mutationAmount;   // Max amount to mutate by
+
+    public MatingSystem() {
+        this(new SimulationConfig());
+    }
+
+    public MatingSystem(SimulationConfig config) {
+        this.matingCooldown = config.matingCooldown;
+        this.mutationRate = config.mutationRate;
+        this.mutationAmount = config.mutationAmount;
+    }
 
     @Override
     public void addedToEngine(Engine engine) {
@@ -38,18 +51,15 @@ public class MatingSystem extends EntitySystem {
             }
         }
 
-        // Try to find and process mating pairs
         for (int i = 0; i < matingEntities.size(); i++) {
             Entity entity1 = matingEntities.get(i);
             ReproductionComponent repro1 = entity1.getComponent(ReproductionComponent.class);
             StatsComponent stats1 = entity1.getComponent(StatsComponent.class);
 
-            // Check if this entity can mate
-            if (repro1.matingCooldown > 0 || stats1.energy < ReproductionComponent.MATING_ENERGY_COST) {
+            if (repro1.matingCooldown > 0 || !isFitToMate(stats1)) {
                 continue;
             }
 
-            // Look for a suitable mate
             for (int j = i + 1; j < matingEntities.size(); j++) {
                 Entity entity2 = matingEntities.get(j);
                 ReproductionComponent repro2 = entity2.getComponent(ReproductionComponent.class);
@@ -57,8 +67,7 @@ public class MatingSystem extends EntitySystem {
                 PositionComponent pos1 = entity1.getComponent(PositionComponent.class);
                 PositionComponent pos2 = entity2.getComponent(PositionComponent.class);
 
-                // Check if conditions for mating are met
-                if (repro2.matingCooldown > 0 || stats2.energy < ReproductionComponent.MATING_ENERGY_COST) {
+                if (repro2.matingCooldown > 0 || !isFitToMate(stats2)) {
                     continue;
                 }
 
@@ -67,7 +76,6 @@ public class MatingSystem extends EntitySystem {
                     continue;
                 }
 
-                // Both entities can mate! Check if they have opposite genders
                 GenderComponent gender1 = entity1.getComponent(GenderComponent.class);
                 GenderComponent gender2 = entity2.getComponent(GenderComponent.class);
 
@@ -75,10 +83,14 @@ public class MatingSystem extends EntitySystem {
                     continue;
                 }
 
+                // Predators only mate with predators, prey only with prey.
+                if (isPredator(entity1) != isPredator(entity2)) {
+                    continue;
+                }
+
                 // Perform mating
                 mate(entity1, entity2);
 
-                // Only one mating per frame per entity to avoid excessive population growth
                 break;
             }
         }
@@ -93,10 +105,12 @@ public class MatingSystem extends EntitySystem {
 
         stats1.energy -= ReproductionComponent.MATING_ENERGY_COST;
         stats2.energy -= ReproductionComponent.MATING_ENERGY_COST;
-        repro1.matingCooldown = ReproductionComponent.MATING_COOLDOWN_TIME;
-        repro2.matingCooldown = ReproductionComponent.MATING_COOLDOWN_TIME;
+        // The offspring is built from the parents' food reserves, so births are limited by food supply.
+        stats1.hunger -= ReproductionComponent.MATING_HUNGER_COST;
+        stats2.hunger -= ReproductionComponent.MATING_HUNGER_COST;
+        repro1.matingCooldown = matingCooldown;
+        repro2.matingCooldown = matingCooldown;
 
-        // Create offspring
         createOffspring(parent1, parent2);
     }
 
@@ -111,26 +125,24 @@ public class MatingSystem extends EntitySystem {
         offspringPos.position.set(parentPos.position.x + offsetX, parentPos.position.y + offsetY);
         offspring.add(offspringPos);
 
-        // Inherit and blend genes from both parents with mutations
+        // Each gene comes whole from one parent (averaging would shrink variation every generation),
+        // then may mutate by a normally distributed amount.
         GenomeComponent parent1Dna = parent1.getComponent(GenomeComponent.class);
         GenomeComponent parent2Dna = parent2.getComponent(GenomeComponent.class);
         GenomeComponent offspringDna = new GenomeComponent();
 
         for (int i = 0; i < offspringDna.genes.length; i++) {
-            // Blend genes: average of both parents
-            float blendedGene = (parent1Dna.genes[i] + parent2Dna.genes[i]) / 2f;
+            float gene = MathUtils.randomBoolean() ? parent1Dna.genes[i] : parent2Dna.genes[i];
 
-            // Apply mutation
-            if (MathUtils.random() < MUTATION_RATE) {
-                blendedGene += MathUtils.random(-MUTATION_AMOUNT, MUTATION_AMOUNT);
-                blendedGene = MathUtils.clamp(blendedGene, GENE_MIN, GENE_MAX);
+            if (MathUtils.random() < mutationRate) {
+                gene += (float) MathUtils.random.nextGaussian() * mutationAmount;
+                gene = MathUtils.clamp(gene, GENE_MIN, GENE_MAX);
             }
 
-            offspringDna.genes[i] = blendedGene;
+            offspringDna.genes[i] = gene;
         }
         offspring.add(offspringDna);
 
-        // Random gender
         GenderComponent offspringGender = new GenderComponent();
         offspring.add(offspringGender);
 
@@ -142,11 +154,8 @@ public class MatingSystem extends EntitySystem {
         offspringStats.health = 80f;
         offspring.add(offspringStats);
 
-        // Vision based on parent genes
-        float parentVisionRange = parent1.getComponent(VisionComponent.class).visionRange;
-        float parentVisionAngle = parent1.getComponent(VisionComponent.class).visionAngle;
-        VisionComponent offspringVision = new VisionComponent(parentVisionRange, parentVisionAngle);
-        offspring.add(offspringVision);
+        // Vision comes from the offspring's own genes
+        offspring.add(new VisionComponent(Traits.visionRange(offspringDna), Traits.visionAngle(offspringDna)));
 
         // Behaviour component
         BehaviourComponent offspringBehaviour = new BehaviourComponent();
@@ -160,7 +169,26 @@ public class MatingSystem extends EntitySystem {
         ReproductionComponent offspringRepro = new ReproductionComponent();
         offspring.add(offspringRepro);
 
+        // Predator parents produce predator offspring
+        PredatorComponent parentPredator = parent1.getComponent(PredatorComponent.class);
+        if (parentPredator != null) {
+            PredatorComponent offspringPredator = new PredatorComponent(parentPredator);
+            offspringPredator.scentRange = Traits.scentRange(offspringDna);
+            offspring.add(offspringPredator);
+        }
+
         engine.addEntity(offspring);
+    }
+
+    /** Only well-fed, rested creatures reproduce, so reproduction depends on how well a creature survives. */
+    private boolean isFitToMate(StatsComponent stats) {
+        return stats.energy >= ReproductionComponent.MATING_ENERGY_COST
+            && stats.hunger >= ReproductionComponent.MATING_MIN_HUNGER
+            && stats.thirst >= ReproductionComponent.MATING_MIN_THIRST;
+    }
+
+    private boolean isPredator(Entity entity) {
+        return entity.getComponent(PredatorComponent.class) != null;
     }
 }
 

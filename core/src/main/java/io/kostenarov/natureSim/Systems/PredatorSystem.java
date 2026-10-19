@@ -5,6 +5,7 @@ import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
 import io.kostenarov.natureSim.Components.BehaviourComponent;
 import io.kostenarov.natureSim.Components.GenderComponent;
 import io.kostenarov.natureSim.Components.GenomeComponent;
@@ -14,6 +15,7 @@ import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
+import io.kostenarov.natureSim.Traits;
 
 public class PredatorSystem extends IteratingSystem {
     private static final float MAP_MIN_X = 0f;
@@ -23,15 +25,13 @@ public class PredatorSystem extends IteratingSystem {
     private static final float ENTITY_SIZE = 32f;
 
     private static final float ENERGY_STOP_THRESHOLD = 3f;
-    private static final float BASE_HUNGER_DECREASE_PER_SEC = 0.12f;
-    private static final float BASE_THIRST_DECREASE_PER_SEC = 0.06f;
-    private static final float BASE_ENERGY_DECREASE_PER_SEC = 3f;
-    private static final float BASE_ENERGY_RECOVER_PER_SEC = 4f;
-    private static final float BASE_HEALTH_DECREASE_PER_SEC = 12f;
+    private static final float ENERGY_RESUME_THRESHOLD = 30f;
 
     private static final float LOOK_AROUND_DURATION = BehaviourComponent.WAIT_AT_TARGET_DURATION;
 
     private ImmutableArray<Entity> preyEntities;
+    private ImmutableArray<Entity> waterEntities;
+    private final Vector2 waterTarget = new Vector2();
 
     public PredatorSystem() {
         super(Family.all(
@@ -58,6 +58,7 @@ public class PredatorSystem extends IteratingSystem {
                 StatsComponent.class,
                 BehaviourComponent.class
         ).exclude(PredatorComponent.class).get());
+        waterEntities = engine.getEntitiesFor(WaterSourceSystem.WATER_FAMILY);
     }
 
     @Override
@@ -66,6 +67,9 @@ public class PredatorSystem extends IteratingSystem {
         if (behaviourComponent == null) {
             return;
         }
+
+        PredatorComponent predator = entity.getComponent(PredatorComponent.class);
+        predator.attackTimer = Math.max(0f, predator.attackTimer - deltaTime);
 
         EntityBehaviour behaviour = decideBehaviour(entity);
         behaviourComponent.behaviour = behaviour;
@@ -82,25 +86,36 @@ public class PredatorSystem extends IteratingSystem {
             return EntityBehaviour.IDLE;
         }
 
-        float missingEnergy = 100f - stats.energy;
-
-        if (stats.energy <= ENERGY_STOP_THRESHOLD) {
-            predator.hasScentTarget = false;
+        // Same hysteresis as prey: once resting, keep resting until energy has recovered.
+        boolean resting = behaviour.behaviour == EntityBehaviour.IDLE && stats.energy < ENERGY_RESUME_THRESHOLD;
+        if (resting || stats.energy <= ENERGY_STOP_THRESHOLD) {
+            clearScentTarget(predator);
             return EntityBehaviour.IDLE;
+        }
+
+        // Drink when thirst is the more urgent need; once drinking, keep drinking until fully quenched.
+        boolean hungry = isHungry(stats, predator);
+        boolean keepDrinking = behaviour.behaviour == EntityBehaviour.SEEKING_WATER && stats.thirst < WaterSourceSystem.WATER_FULL_THRESHOLD;
+        boolean thirsty = stats.thirst < Traits.waterSeekThreshold(entity.getComponent(GenomeComponent.class));
+        if (keepDrinking || (thirsty && (!hungry || stats.thirst < stats.hunger))) {
+            clearScentTarget(predator);
+            return EntityBehaviour.SEEKING_WATER;
+        }
+
+        // Only hunt once there is room for a full meal; a sated predator just wanders.
+        if (!hungry) {
+            clearScentTarget(predator);
+            return EntityBehaviour.EXPLORING;
         }
 
         Entity prey = findNearestVisiblePrey(entity);
         if (prey == null) {
-            if (predator.hasScentTarget) {
-                return EntityBehaviour.EXPLORING;
+            if (!predator.hasScentTarget) {
+                Entity smelledPrey = findNearestSmelledPrey(entity);
+                if (smelledPrey != null) {
+                    rememberScentTarget(predator, smelledPrey.getComponent(PositionComponent.class));
+                }
             }
-
-            Entity smelledPrey = findNearestSmelledPrey(entity);
-            if (smelledPrey != null) {
-                rememberScentTarget(predator, smelledPrey.getComponent(PositionComponent.class));
-                return EntityBehaviour.EXPLORING;
-            }
-
             return EntityBehaviour.EXPLORING;
         }
 
@@ -108,12 +123,12 @@ public class PredatorSystem extends IteratingSystem {
         PositionComponent preyPos = prey.getComponent(PositionComponent.class);
         float distance = predatorPos.position.dst(preyPos.position);
 
-        if (missingEnergy <= predator.killEnergyGain * predator.huntEnergyBufferMultiplier) {
-            return distance <= predator.attackRange ? EntityBehaviour.ATTACKING : EntityBehaviour.HUNTING;
-        }
+        return distance <= predator.attackRange ? EntityBehaviour.ATTACKING : EntityBehaviour.HUNTING;
+    }
 
-        rememberScentTarget(predator, preyPos);
-        return EntityBehaviour.EXPLORING;
+    private boolean isHungry(StatsComponent stats, PredatorComponent predator) {
+        float missingHunger = 100f - stats.hunger;
+        return missingHunger >= predator.killEnergyGain * predator.huntEnergyBufferMultiplier;
     }
 
     private void executeBehaviour(Entity entity, EntityBehaviour behaviour, float deltaTime) {
@@ -124,14 +139,13 @@ public class PredatorSystem extends IteratingSystem {
         } else if (behaviour == EntityBehaviour.IDLE) {
             vel.velocity.set(0f, 0f);
             recoverEnergy(entity, deltaTime);
+        } else if (behaviour == EntityBehaviour.SEEKING_WATER) {
+            seekWater(entity, deltaTime);
+            decreaseStats(entity, deltaTime);
         } else if (behaviour == EntityBehaviour.EXPLORING) {
-            if (entity.getComponent(PredatorComponent.class) != null) {
-                PredatorComponent predatorData = entity.getComponent(PredatorComponent.class);
-                if (predatorData.hasScentTarget || findNearestSmelledPrey(entity) != null) {
-                    sniffForPrey(entity, deltaTime);
-                } else {
-                    explore(entity, deltaTime);
-                }
+            // decideBehaviour only sets a scent target while the predator is hungry.
+            if (entity.getComponent(PredatorComponent.class).hasScentTarget) {
+                sniffForPrey(entity, deltaTime);
             } else {
                 explore(entity, deltaTime);
             }
@@ -178,7 +192,7 @@ public class PredatorSystem extends IteratingSystem {
 
         if (behaviour.hasTarget) {
             float distanceToTarget = pos.position.dst(behaviour.targetPoint);
-            float speedMultiplier = 50f + (dna.genes[GenomeComponent.SPEED] * 200f);
+            float speedMultiplier = Traits.speed(dna);
             float step = speedMultiplier * deltaTime;
 
             if (step >= distanceToTarget) {
@@ -222,17 +236,44 @@ public class PredatorSystem extends IteratingSystem {
         float distance = predatorPos.position.dst(preyPos.position);
 
         if (distance <= predatorData.attackRange) {
-            attackPrey(predator, prey);
+            if (predatorData.attackTimer <= 0f) {
+                attackPrey(predator, prey);
+                predatorData.attackTimer = predatorData.attackCooldown;
+            }
             vel.velocity.set(0f, 0f);
             return;
         }
 
-        com.badlogic.gdx.math.Vector2 direction = new com.badlogic.gdx.math.Vector2(preyPos.position).sub(predatorPos.position).nor();
-        float speedMultiplier = (50f + (dna.genes[GenomeComponent.SPEED] * 200f)) * predatorData.huntSpeedMultiplier;
+        Vector2 direction = new Vector2(preyPos.position).sub(predatorPos.position).nor();
+        float speedMultiplier = Traits.speed(dna) * predatorData.huntSpeedMultiplier;
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
 
         updatePosition(predatorPos, vel, deltaTime);
         constrainPositionToBounds(predatorPos);
+        updateVisionDirection(predator);
+    }
+
+    private void seekWater(Entity predator, float deltaTime) {
+        PositionComponent pos = predator.getComponent(PositionComponent.class);
+        VelocityComponent vel = predator.getComponent(VelocityComponent.class);
+        GenomeComponent dna = predator.getComponent(GenomeComponent.class);
+        StatsComponent stats = predator.getComponent(StatsComponent.class);
+
+        Entity pond = WaterSourceSystem.findNearestWater(waterEntities, pos);
+        if (pond == null) {
+            vel.velocity.set(0f, 0f);
+            return;
+        }
+
+        if (WaterSourceSystem.canDrinkFrom(pond, pos)) {
+            vel.velocity.set(0f, 0f);
+            WaterSourceSystem.drink(stats, deltaTime);
+            return;
+        }
+
+        moveTowardTarget(predator, WaterSourceSystem.approachPoint(pond, waterTarget), dna);
+        updatePosition(pos, vel, deltaTime);
+        constrainPositionToBounds(pos);
         updateVisionDirection(predator);
     }
 
@@ -372,36 +413,11 @@ public class PredatorSystem extends IteratingSystem {
     }
 
     private void recoverEnergy(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        if (stats != null && dna != null) {
-            float recoveryRate = BASE_ENERGY_RECOVER_PER_SEC * (0.5f + dna.genes[GenomeComponent.RECOVERY_RATE]);
-            stats.energy = Math.min(100f, stats.energy + recoveryRate * deltaTime);
-        }
+        Traits.rest(entity.getComponent(StatsComponent.class), entity.getComponent(GenomeComponent.class), true, deltaTime);
     }
 
     private void decreaseStats(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        if (stats != null && dna != null) {
-            float hungerRate = BASE_HUNGER_DECREASE_PER_SEC * (0.5f + dna.genes[GenomeComponent.HUNGER_SENSITIVITY]);
-            float thirstRate = BASE_THIRST_DECREASE_PER_SEC * (0.5f + dna.genes[GenomeComponent.THIRST_SENSITIVITY]);
-            float energyRate = BASE_ENERGY_DECREASE_PER_SEC * (0.5f + dna.genes[GenomeComponent.METABOLISM]);
-
-            stats.hunger = Math.max(0f, stats.hunger - hungerRate * deltaTime);
-            stats.thirst = Math.max(0f, stats.thirst - thirstRate * deltaTime);
-            stats.energy = Math.max(0f, stats.energy - energyRate * deltaTime);
-        }
-        decreaseHealth(entity, deltaTime);
-    }
-
-    private void decreaseHealth(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        if (stats != null && dna != null && (stats.hunger <= 0f || stats.thirst <= 0f)) {
-            float healthLossRate = BASE_HEALTH_DECREASE_PER_SEC / (0.5f + dna.genes[GenomeComponent.METABOLISM]);
-            stats.health = Math.max(0f, stats.health - healthLossRate * deltaTime);
-        }
+        Traits.burnActive(entity.getComponent(StatsComponent.class), entity.getComponent(GenomeComponent.class), true, deltaTime);
     }
 
     private void pickTargetPointInVisibleArea(Entity entity) {
@@ -476,16 +492,16 @@ public class PredatorSystem extends IteratingSystem {
         }
     }
 
-    private void moveTowardTarget(Entity entity, com.badlogic.gdx.math.Vector2 targetPoint, GenomeComponent dna) {
+    private void moveTowardTarget(Entity entity, Vector2 targetPoint, GenomeComponent dna) {
         moveTowardTarget(entity, targetPoint, dna, 1f);
     }
 
-    private void moveTowardTarget(Entity entity, com.badlogic.gdx.math.Vector2 targetPoint, GenomeComponent dna, float speedScale) {
+    private void moveTowardTarget(Entity entity, Vector2 targetPoint, GenomeComponent dna, float speedScale) {
         PositionComponent pos = entity.getComponent(PositionComponent.class);
         VelocityComponent vel = entity.getComponent(VelocityComponent.class);
 
-        com.badlogic.gdx.math.Vector2 direction = new com.badlogic.gdx.math.Vector2(targetPoint).sub(pos.position).nor();
-        float speedMultiplier = (50f + (dna.genes[GenomeComponent.SPEED] * 200f)) * speedScale;
+        Vector2 direction = new Vector2(targetPoint).sub(pos.position).nor();
+        float speedMultiplier = Traits.speed(dna) * speedScale;
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
     }
 

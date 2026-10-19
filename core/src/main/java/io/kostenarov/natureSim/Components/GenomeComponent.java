@@ -3,15 +3,16 @@ package io.kostenarov.natureSim.Components;
 import com.badlogic.ashley.core.Component;
 
 public class GenomeComponent implements Component {
-    public static final int SPEED = 0;                //Affects speed
-    public static final int VISION = 1;               //Affects how far the creature can see resources and threats
-    public static final int SIZE = 2;                 //Affects how much energy the creature can store and how much it consumes while moving
-    public static final int METABOLISM = 3;           // Affects energy consumption rate
-    public static final int RECOVERY_RATE = 4;        // Affects energy recovery rate
-    public static final int HUNGER_SENSITIVITY = 5;   // Affects how quickly hunger increases
-    public static final int THIRST_SENSITIVITY = 6;   // Affects how quickly thirst increases
-    public static final int SCENT_RANGE = 7;          // Affects how far the creature can smell resources and threats (PREDATOR SPECIFIC FOR NOW)
-    public static final int STEALTH = 8;              // Affects how easily the creature can be detected by predators and prey (PREDATOR SPECIFIC)
+    // What each gene does, and what it costs, is defined in Traits.
+    public static final int SPEED = 0;                // Faster movement; energy/food cost grows with speed squared
+    public static final int VISION = 1;               // Longer sight range but a narrower vision cone
+    public static final int SIZE = 2;                 // Not used yet
+    public static final int METABOLISM = 3;           // Survives starvation longer, burns energy faster
+    public static final int RECOVERY_RATE = 4;        // Recovers energy faster at rest, burns more food at rest
+    public static final int HUNGER_SENSITIVITY = 5;   // How early the creature starts looking for food
+    public static final int THIRST_SENSITIVITY = 6;   // How early the creature starts looking for water
+    public static final int SCENT_RANGE = 7;          // How far a predator can smell prey (costs food)
+    public static final int STEALTH = 8;              // Not used yet
 
     public float[] genes = new float[9];
 

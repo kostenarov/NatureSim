@@ -32,6 +32,7 @@ public class PredatorSystem extends IteratingSystem {
     private ImmutableArray<Entity> preyEntities;
     private ImmutableArray<Entity> waterEntities;
     private final Vector2 waterTarget = new Vector2();
+    private final Vector2 tmp = new Vector2(); // Scratch vector, avoids allocating every frame
 
     public PredatorSystem() {
         super(Family.all(
@@ -244,7 +245,7 @@ public class PredatorSystem extends IteratingSystem {
             return;
         }
 
-        Vector2 direction = new Vector2(preyPos.position).sub(predatorPos.position).nor();
+        Vector2 direction = tmp.set(preyPos.position).sub(predatorPos.position).nor();
         float speedMultiplier = Traits.speed(dna) * predatorData.huntSpeedMultiplier;
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
 
@@ -500,7 +501,7 @@ public class PredatorSystem extends IteratingSystem {
         PositionComponent pos = entity.getComponent(PositionComponent.class);
         VelocityComponent vel = entity.getComponent(VelocityComponent.class);
 
-        Vector2 direction = new Vector2(targetPoint).sub(pos.position).nor();
+        Vector2 direction = tmp.set(targetPoint).sub(pos.position).nor();
         float speedMultiplier = Traits.speed(dna) * speedScale;
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
     }

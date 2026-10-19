@@ -27,9 +27,15 @@ public class MovementSystem extends IteratingSystem {
     private static final float FOOD_CONSUMPTION_DISTANCE = 32f; // How close to be to eat food
     private static final float PREY_ESCAPE_SPEED_MULTIPLIER = 1.25f;
 
+    private static final float MAP_DIAGONAL = (float) Math.hypot(MAP_MAX_X, MAP_MAX_Y);
+    private static final int GRID_FOOD_SEARCH_MIN = 100; // Below this much food, scan the list instead
+
     private ImmutableArray<Entity> foodEntities;
     private ImmutableArray<Entity> waterEntities;
+    private ImmutableArray<Entity> predatorEntities;
     private final Vector2 waterTarget = new Vector2();
+    private final Vector2 tmp = new Vector2(); // Scratch vector, avoids allocating every frame
+    private final SpatialGrid.Filter uneatenFood = food -> !food.getComponent(FoodSourceComponent.class).consumed;
 
     public MovementSystem() {
         super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class, GenderComponent.class, StatsComponent.class, BehaviourComponent.class).exclude(PredatorComponent.class).get());
@@ -40,6 +46,7 @@ public class MovementSystem extends IteratingSystem {
         super.addedToEngine(engine);
         foodEntities = engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get());
         waterEntities = engine.getEntitiesFor(WaterSourceSystem.WATER_FAMILY);
+        predatorEntities = engine.getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get());
     }
 
     @Override
@@ -296,36 +303,20 @@ public class MovementSystem extends IteratingSystem {
         GenomeComponent dna = entity.getComponent(GenomeComponent.class);
         StatsComponent stats = entity.getComponent(StatsComponent.class);
 
-        // Find nearest food source
-        Entity nearestFood = null;
-        float nearestDistance = Float.MAX_VALUE;
-
-        if (foodEntities != null) {
-            for (Entity food : foodEntities) {
-                if (food.getComponent(FoodSourceComponent.class).consumed) {
-                    continue; // Already eaten this frame, removed next frame
-                }
-                PositionComponent foodPos = food.getComponent(PositionComponent.class);
-                float distance = pos.position.dst(foodPos.position);
-                if (distance < nearestDistance) {
-                    nearestDistance = distance;
-                    nearestFood = food;
-                }
-            }
-        }
+        Entity nearestFood = findNearestFood(pos);
 
         if (nearestFood != null) {
             PositionComponent foodPos = nearestFood.getComponent(PositionComponent.class);
             FoodSourceComponent foodComp = nearestFood.getComponent(FoodSourceComponent.class);
 
             // If close enough, consume the food
-            if (nearestDistance < FOOD_CONSUMPTION_DISTANCE) {
+            if (pos.position.dst(foodPos.position) < FOOD_CONSUMPTION_DISTANCE) {
                 stats.hunger = Math.min(100f, stats.hunger + foodComp.nutritionValue);
                 foodComp.consumed = true;
                 vel.velocity.set(0f, 0f);
             } else {
                 // Move toward the food
-                Vector2 direction = new Vector2(foodPos.position).sub(pos.position).nor();
+                Vector2 direction = tmp.set(foodPos.position).sub(pos.position).nor();
                 float speedMultiplier = Traits.speed(dna);
                 vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
 
@@ -337,6 +328,29 @@ public class MovementSystem extends IteratingSystem {
             // No food found, just stop and wait
             vel.velocity.set(0f, 0f);
         }
+    }
+
+    /** Nearest food that hasn't been eaten yet, anywhere on the map. */
+    private Entity findNearestFood(PositionComponent pos) {
+        // With only a little food on the map, a plain scan beats walking many empty grid cells.
+        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
+        if (index != null && foodEntities.size() >= GRID_FOOD_SEARCH_MIN) {
+            return index.food().findNearest(pos.position.x, pos.position.y, MAP_DIAGONAL, uneatenFood);
+        }
+
+        Entity nearestFood = null;
+        float nearestDistance = Float.MAX_VALUE;
+        for (Entity food : foodEntities) {
+            if (!uneatenFood.accept(food)) {
+                continue;
+            }
+            float distance = pos.position.dst(food.getComponent(PositionComponent.class).position);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestFood = food;
+            }
+        }
+        return nearestFood;
     }
 
     private void seekWater(Entity entity, float deltaTime) {
@@ -375,7 +389,7 @@ public class MovementSystem extends IteratingSystem {
         }
 
         PositionComponent predatorPos = threateningPredator.getComponent(PositionComponent.class);
-        Vector2 direction = new Vector2(preyPos.position).sub(predatorPos.position).nor();
+        Vector2 direction = tmp.set(preyPos.position).sub(predatorPos.position).nor();
         float speedMultiplier = Traits.speed(dna) * PREY_ESCAPE_SPEED_MULTIPLIER;
         vel.velocity.set(direction.x * speedMultiplier, direction.y * speedMultiplier);
 
@@ -395,7 +409,7 @@ public class MovementSystem extends IteratingSystem {
         Entity nearestPredator = null;
         float nearestDistance = Float.MAX_VALUE;
 
-        for (Entity candidate : getEngine().getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get())) {
+        for (Entity candidate : predatorEntities) {
             PositionComponent candidatePos = candidate.getComponent(PositionComponent.class);
             if (canSeeTarget(preyPos, vision, candidatePos)) {
                 float distance = preyPos.position.dst(candidatePos.position);
@@ -442,7 +456,7 @@ public class MovementSystem extends IteratingSystem {
         VelocityComponent vel = entity.getComponent(VelocityComponent.class);
 
         // Calculate direction from current position to target
-        Vector2 direction = new Vector2(targetPoint).sub(pos.position).nor();
+        Vector2 direction = tmp.set(targetPoint).sub(pos.position).nor();
 
         // Apply speed multiplier from genome
         float speedMultiplier = Traits.speed(dna);

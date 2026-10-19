@@ -4,6 +4,7 @@ import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.EntityListener;
 import com.badlogic.ashley.core.Family;
+import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.ScreenAdapter;
@@ -31,6 +32,7 @@ import io.kostenarov.natureSim.Components.WaterSourceComponent;
 import io.kostenarov.natureSim.Systems.CameraSystem;
 import io.kostenarov.natureSim.Systems.CollisionSystem;
 import io.kostenarov.natureSim.Systems.DeathSystem;
+import io.kostenarov.natureSim.Systems.SpatialIndexSystem;
 import io.kostenarov.natureSim.Systems.WaterSourceSystem;
 import io.kostenarov.natureSim.Systems.PredatorSystem;
 import io.kostenarov.natureSim.Systems.MovementSystem;
@@ -59,8 +61,38 @@ public class SimulationScreen extends ScreenAdapter {
     private Texture fieldTexture;
     private com.badlogic.gdx.graphics.g2d.TextureRegion tileRegion;
     private static final float TILE_SIZE = 40f;
+    // Colors are created once; allocating them per creature per frame made a lot of garbage
     private final Color waterColor = new Color(0.20f, 0.45f, 0.85f, 0.85f);
     private final Color shoreColor = new Color(0.75f, 0.68f, 0.45f, 1f);
+    private final Color visionColor = new Color(0.72f, 0.62f, 0.42f, 0.22f); // Sandy tone, 22% opacity
+    private final Color visionFillColor = new Color(0.72f, 0.62f, 0.42f, 0.12f);
+    private final Color scentFillColor = new Color(1f, 0.1f, 0.1f, 0.10f);
+    private final Color scentOutlineColor = new Color(1f, 0.1f, 0.1f, 0.25f);
+    private final Color targetColor = new Color(1f, 0.2f, 0.2f, 0.6f);
+    private final Color panelBg = new Color(0.08f, 0.08f, 0.08f, 0.7f);
+    private final Color panelBorder = new Color(0.6f, 0.6f, 0.6f, 0.8f);
+    private final Vector3 touchPoint = new Vector3();
+
+    // Simulation speed: fixed steps, run more of them per frame to speed up
+    private static final float SIM_STEP = 1f / 60f;
+    private static final float MAX_FRAME_TIME = 0.25f;    // Ignore huge frame gaps (e.g. window dragged)
+    private static final int MAX_STEPS_PER_FRAME = 40;
+    private static final float[] SPEEDS = {1f, 2f, 5f, 10f, 20f}; // Keys 1-5
+    private int speedIndex = 0;
+    private boolean paused = false;
+    private float accumulator = 0f;
+    private CameraSystem cameraSystem;
+
+    // Cached entity lists for rendering, and the visible world area this frame
+    private ImmutableArray<Entity> pondEntities;
+    private ImmutableArray<Entity> visionEntities;
+    private ImmutableArray<Entity> predatorEntities;
+    private ImmutableArray<Entity> foodEntities;
+    private ImmutableArray<Entity> creatureEntities;
+    private float visibleLeft;
+    private float visibleRight;
+    private float visibleBottom;
+    private float visibleTop;
     private final float screenWidth = 2560f;
     private final float screenHeight = 1440f;
     private float currentScreenWidth;
@@ -127,6 +159,7 @@ public class SimulationScreen extends ScreenAdapter {
 
     private void initEngineAndSystems() {
         engine = new Engine();
+        engine.addSystem(new SpatialIndexSystem()); // Always runs first each step
         // Ponds first: food grows around them
         engine.addSystem(new WaterSourceSystem(config));
         engine.addSystem(new FoodSourceSystem(config));
@@ -137,8 +170,14 @@ public class SimulationScreen extends ScreenAdapter {
             engine.addSystem(new CollisionSystem());
         }
         engine.addSystem(new DeathSystem());
-        CameraSystem cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        engine.addSystem(cameraSystem);
+        // Not added to the engine: the camera is updated with real time, outside the fixed simulation steps.
+        cameraSystem = new CameraSystem(camera, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+
+        pondEntities = engine.getEntitiesFor(WaterSourceSystem.WATER_FAMILY);
+        visionEntities = engine.getEntitiesFor(Family.all(PositionComponent.class, VisionComponent.class).get());
+        predatorEntities = engine.getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get());
+        foodEntities = engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get());
+        creatureEntities = engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get());
         engine.addSystem(new VisionRenderingSystem(shapeDrawer, camera));
 
         // Drop the stats panel when the selected creature dies.
@@ -240,14 +279,59 @@ public class SimulationScreen extends ScreenAdapter {
     }
 
     private void updateEngineAndInput() {
-        float deltaTime = Gdx.graphics.getDeltaTime();
-        engine.update(deltaTime);
+        float realDelta = Math.min(Gdx.graphics.getDeltaTime(), MAX_FRAME_TIME);
+        handleSpeedKeys();
+
+        // The camera follows real time so it stays responsive while the simulation is paused or sped up.
+        cameraSystem.update(realDelta);
+
+        // Fixed-size simulation steps: results no longer depend on frame rate, and speed-up just runs more steps.
+        if (!paused) {
+            accumulator += realDelta * SPEEDS[speedIndex];
+            int steps = 0;
+            while (accumulator >= SIM_STEP && steps < MAX_STEPS_PER_FRAME) {
+                engine.update(SIM_STEP);
+                accumulator -= SIM_STEP;
+                steps++;
+            }
+            if (steps == MAX_STEPS_PER_FRAME) {
+                accumulator = 0f; // Can't keep up at this speed; drop the backlog instead of spiralling
+            }
+        }
 
         if (Gdx.input.justTouched()) {
             float screenX = Gdx.input.getX();
             float screenY = Gdx.input.getY();
             selectEntityAtScreen(screenX, screenY);
         }
+    }
+
+    private void handleSpeedKeys() {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.P)) {
+            paused = !paused;
+        }
+        for (int i = 0; i < SPEEDS.length; i++) {
+            if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1 + i)) {
+                speedIndex = i;
+                paused = false;
+            }
+        }
+    }
+
+    /** Works out which part of the world the camera currently shows, for culling. */
+    private void updateVisibleArea() {
+        float halfWidth = camera.viewportWidth * camera.zoom / 2f;
+        float halfHeight = camera.viewportHeight * camera.zoom / 2f;
+        visibleLeft = camera.position.x - halfWidth;
+        visibleRight = camera.position.x + halfWidth;
+        visibleBottom = camera.position.y - halfHeight;
+        visibleTop = camera.position.y + halfHeight;
+    }
+
+    /** True if something within {@code radius} of (x, y) could be on screen. */
+    private boolean isVisible(float x, float y, float radius) {
+        return x + radius >= visibleLeft && x - radius <= visibleRight
+            && y + radius >= visibleBottom && y - radius <= visibleTop;
     }
 
     private void renderBackgroundTiles() {
@@ -291,22 +375,28 @@ public class SimulationScreen extends ScreenAdapter {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
         batch.flush();
+        updateVisibleArea();
 
+        // Everything below skips what is off screen; drawing all of it was the main rendering cost.
         // Draw ponds underneath everything else (their position is the pond center)
-        for (Entity entity : engine.getEntitiesFor(WaterSourceSystem.WATER_FAMILY)) {
+        for (Entity entity : pondEntities) {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
             WaterSourceComponent water = entity.getComponent(WaterSourceComponent.class);
-            drawFilledCircle(pos.position.x, pos.position.y, water.radius, waterColor);
-            drawCircleOutline(pos.position.x, pos.position.y, water.radius, shoreColor);
+            if (isVisible(pos.position.x, pos.position.y, water.radius)) {
+                drawFilledCircle(pos.position.x, pos.position.y, water.radius, waterColor);
+                drawCircleOutline(pos.position.x, pos.position.y, water.radius, shoreColor);
+            }
         }
 
         batch.flush();
 
         if (config.showVisionCones) {
-            for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class, VisionComponent.class).get())) {
+            for (Entity entity : visionEntities) {
                 PositionComponent pos = entity.getComponent(PositionComponent.class);
                 VisionComponent vision = entity.getComponent(VisionComponent.class);
-                drawVisionCone(pos.position.x + 16, pos.position.y + 16, vision);
+                if (isVisible(pos.position.x + 16f, pos.position.y + 16f, vision.visionRange)) {
+                    drawVisionCone(pos.position.x + 16, pos.position.y + 16, vision);
+                }
             }
         }
 
@@ -314,33 +404,34 @@ public class SimulationScreen extends ScreenAdapter {
 
         // Draw predator scent ranges / smell targets
         if (config.showScentRanges) {
-            for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get())) {
+            for (Entity entity : predatorEntities) {
                 PositionComponent pos = entity.getComponent(PositionComponent.class);
                 PredatorComponent predator = entity.getComponent(PredatorComponent.class);
-                drawScentRange(pos.position.x + 16f, pos.position.y + 16f, predator);
+                if (isVisible(pos.position.x + 16f, pos.position.y + 16f, predator.scentRange)) {
+                    drawScentRange(pos.position.x + 16f, pos.position.y + 16f, predator);
+                }
             }
         }
 
         batch.flush();
 
         // Draw food sources
-        for (Entity entity : engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get())) {
+        for (Entity entity : foodEntities) {
             PositionComponent pos = entity.getComponent(PositionComponent.class);
-            batch.draw(foodTexture, pos.position.x, pos.position.y);
-        }
-
-        // Draw the agents
-        for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class).exclude(FoodSourceComponent.class, WaterSourceComponent.class).get())) {
-            PositionComponent pos = entity.getComponent(PositionComponent.class);
-            if (entity.getComponent(io.kostenarov.natureSim.Components.PredatorComponent.class) != null) {
-                batch.setColor(Color.WHITE);
-                batch.draw(predatorTexture, pos.position.x, pos.position.y);
-            } else {
-                batch.setColor(Color.WHITE);
-                batch.draw(agentTexture, pos.position.x, pos.position.y);
+            if (isVisible(pos.position.x, pos.position.y, 16f)) {
+                batch.draw(foodTexture, pos.position.x, pos.position.y);
             }
         }
+
+        // Draw the creatures
         batch.setColor(Color.WHITE);
+        for (Entity entity : creatureEntities) {
+            PositionComponent pos = entity.getComponent(PositionComponent.class);
+            if (isVisible(pos.position.x, pos.position.y, 32f)) {
+                Texture texture = entity.getComponent(PredatorComponent.class) != null ? predatorTexture : agentTexture;
+                batch.draw(texture, pos.position.x, pos.position.y);
+            }
+        }
         batch.end();
     }
 
@@ -353,22 +444,18 @@ public class SimulationScreen extends ScreenAdapter {
     }
 
     private void drawPopulationCounter() {
-        // Count agents (entities with StatsComponent)
-        int populationCount = 0;
-        for (@SuppressWarnings("unused") Entity ignored : engine.getEntitiesFor(Family.all(StatsComponent.class, GenomeComponent.class).get())) {
-            populationCount++;
-        }
+        String speed = paused ? "PAUSED" : (int) SPEEDS[speedIndex] + "x speed";
 
         font.setColor(Color.WHITE);
         font.getData().setScale(2f);
-        font.draw(batch, "Population: " + populationCount, 20f, uiCamera.position.y + (uiCamera.viewportHeight / 2f) - 20f);
+        font.draw(batch, "Population: " + creatureEntities.size() + "    " + speed, 20f, uiCamera.position.y + (uiCamera.viewportHeight / 2f) - 20f);
 
         font.getData().setScale(1.5f);
-        font.draw(batch, "Esc: settings   WASD: move   Q/E: zoom   Space: follow   Click: inspect", 20f, 30f);
+        font.draw(batch, "Esc: settings   P: pause   1-5: speed   WASD: move   Q/E: zoom   Space: follow   Click: inspect", 20f, 30f);
     }
 
     private void selectEntityAtScreen(float screenX, float screenY) {
-        Vector3 worldCoords = camera.unproject(new Vector3(screenX, screenY, 0));
+        Vector3 worldCoords = camera.unproject(touchPoint.set(screenX, screenY, 0));
 
         Entity picked = null;
         for (Entity entity : engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get())) {
@@ -412,8 +499,6 @@ public class SimulationScreen extends ScreenAdapter {
         float topY = uiCamera.position.y + (uiCamera.viewportHeight / 2f);
         float y = topY - panelHeight - padding;
 
-        Color panelBg = new Color(0.08f, 0.08f, 0.08f, 0.7f);
-        Color panelBorder = new Color(0.6f, 0.6f, 0.6f, 0.8f);
 
         shapeDrawer.filledRectangle(padding, y, panelWidth, panelHeight, panelBg);
         shapeDrawer.rectangle(padding, y, panelWidth, panelHeight, panelBorder, 1f);
@@ -455,7 +540,6 @@ public class SimulationScreen extends ScreenAdapter {
         float endAngle = directionAngle + (coneAngle / 2);
 
         // Set color to semi-transparent sandy/dirty tone
-        Color visionColor = new Color(0.72f, 0.62f, 0.42f, 0.22f); // Sandy/dirty tone with 22% opacity
 
         // Draw lines from center to the edges of the cone
         float startRad = (float) Math.toRadians(startAngle);
@@ -501,7 +585,6 @@ public class SimulationScreen extends ScreenAdapter {
 
     private void drawFilledCone(float centerX, float centerY, float radius, float startAngle, float endAngle, Color color) {
         // Semi-transparent version for fill
-        Color fillColor = new Color(color.r, color.g, color.b, 0.12f);
 
         int segments = (int) ((endAngle - startAngle) / 5f) + 1; // 5 degree segments
         segments = Math.max(segments, 2);
@@ -519,7 +602,7 @@ public class SimulationScreen extends ScreenAdapter {
             float y2 = centerY + radius * (float) Math.sin(nextAngle);
 
             // Draw a triangle from center to the arc segment
-            drawFilledTriangle(centerX, centerY, x1, y1, x2, y2, fillColor);
+            drawFilledTriangle(centerX, centerY, x1, y1, x2, y2, visionFillColor);
 
             angle += angleStep;
         }
@@ -534,14 +617,11 @@ public class SimulationScreen extends ScreenAdapter {
             return;
         }
 
-        Color scentFillColor = new Color(1f, 0.1f, 0.1f, 0.10f);
-        Color scentOutlineColor = new Color(1f, 0.1f, 0.1f, 0.25f);
 
         drawFilledCircle(centerX, centerY, predator.scentRange, scentFillColor);
         drawCircleOutline(centerX, centerY, predator.scentRange, scentOutlineColor);
 
         if (predator.hasScentTarget) {
-            Color targetColor = new Color(1f, 0.2f, 0.2f, 0.6f);
             shapeDrawer.line(predator.scentTarget.x - 10f, predator.scentTarget.y - 10f, predator.scentTarget.x + 10f, predator.scentTarget.y + 10f, targetColor, 2f);
             shapeDrawer.line(predator.scentTarget.x - 10f, predator.scentTarget.y + 10f, predator.scentTarget.x + 10f, predator.scentTarget.y - 10f, targetColor, 2f);
         }

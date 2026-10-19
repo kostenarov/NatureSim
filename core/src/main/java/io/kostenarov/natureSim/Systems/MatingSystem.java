@@ -6,6 +6,7 @@ import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.utils.Array;
 import io.kostenarov.natureSim.Components.*;
 import io.kostenarov.natureSim.SimulationConfig;
 import io.kostenarov.natureSim.Traits;
@@ -13,6 +14,7 @@ import io.kostenarov.natureSim.Traits;
 public class MatingSystem extends EntitySystem {
     private ImmutableArray<Entity> matingEntities;
     private Engine engine;
+    private final Array<Entity> nearby = new Array<>(false, 32);
 
     private static final float GENE_MIN = 0f;
     private static final float GENE_MAX = 2f;
@@ -51,6 +53,8 @@ public class MatingSystem extends EntitySystem {
             }
         }
 
+        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
+
         for (int i = 0; i < matingEntities.size(); i++) {
             Entity entity1 = matingEntities.get(i);
             ReproductionComponent repro1 = entity1.getComponent(ReproductionComponent.class);
@@ -60,11 +64,20 @@ public class MatingSystem extends EntitySystem {
                 continue;
             }
 
-            for (int j = i + 1; j < matingEntities.size(); j++) {
-                Entity entity2 = matingEntities.get(j);
+            PositionComponent pos1 = entity1.getComponent(PositionComponent.class);
+            Iterable<Entity> candidates = matingEntities;
+            if (index != null) {
+                // Only creatures within mating distance can be partners.
+                index.creatures().query(pos1.position.x, pos1.position.y, ReproductionComponent.MATING_DISTANCE, nearby);
+                candidates = nearby;
+            }
+
+            for (Entity entity2 : candidates) {
                 ReproductionComponent repro2 = entity2.getComponent(ReproductionComponent.class);
+                if (entity2 == entity1 || repro2 == null) {
+                    continue;
+                }
                 StatsComponent stats2 = entity2.getComponent(StatsComponent.class);
-                PositionComponent pos1 = entity1.getComponent(PositionComponent.class);
                 PositionComponent pos2 = entity2.getComponent(PositionComponent.class);
 
                 if (repro2.matingCooldown > 0 || !isFitToMate(stats2)) {

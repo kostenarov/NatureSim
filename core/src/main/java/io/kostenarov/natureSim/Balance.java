@@ -26,6 +26,13 @@ public final class Balance {
     public static final float IDLE_RESUME_THRESHOLD = 80f;      // With nothing to do, a resting creature stays put until this fresh
     public static final float LOOK_AROUND_DURATION = 0.5f;      // Pause at each wander target before picking the next
 
+    // --- Getting around ---------------------------------------------------------------------------------
+    public static final float AVOID_RANGE = 48f;                // Walkers swerve around standing creatures this close ahead
+    public static final float AVOID_STRENGTH = 1.5f;            // How hard they swerve
+    public static final float STUCK_DISTANCE = 8f;             // Moving less than this...
+    public static final float STUCK_SECONDS = 1.5f;             // ...for this long means a target is unreachable
+    public static final float IGNORE_BLOCKED_FOOD_SECONDS = 3f; // Food blocked by a crowd is left alone this long
+
     // --- Prey -------------------------------------------------------------------------------------------
     public static final float ESCAPE_SPEED_MULTIPLIER = 1.25f;  // Prey run faster than they walk
     public static final float FLEE_MEMORY = 2f;                 // Seconds a prey keeps fleeing after losing sight of a threat
@@ -34,6 +41,7 @@ public final class Balance {
     public static final float HERD_RADIUS = 120f;               // Prey this close count as part of the herd
     public static final float HERD_COHESION = 0.4f;             // How strongly fleeing prey lean toward their herd
     public static final float ALARM_DECAY = 0.4f;               // Seconds of fear lost each time panic spreads to a neighbour
+    public static final float MIN_ALARM = 0.5f;                 // Panic caught from a neighbour lasts at least this long
 
     // --- Predators --------------------------------------------------------------------------------------
     public static final float ATTACK_RANGE = 30f;

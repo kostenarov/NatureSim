@@ -1,6 +1,7 @@
 package io.kostenarov.natureSim.Components;
 
 import com.badlogic.ashley.core.Component;
+import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.math.Vector2;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
 
@@ -22,4 +23,11 @@ public class BehaviourComponent implements Component {
     // Prey keep running from a threat for a while after losing sight of it (turning away to flee hides it)
     public final Vector2 lastThreat = new Vector2();
     public float fleeTimer = 0f;
+
+    // Wandering gives up on a target it can't reach (see CreatureSystem): where it last made progress, and since when
+    public final Vector2 progressAnchor = new Vector2();
+    public float progressTimer = 0f;
+    // Food that a crowd kept this creature from reaching; ignored until the timer runs out
+    public Entity ignoredFood = null;
+    public float ignoreFoodTimer = 0f;
 }

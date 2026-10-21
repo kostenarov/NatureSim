@@ -32,7 +32,9 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     protected final Vector2 tmp = new Vector2(); // Scratch vector, avoids allocating every frame
     private final Vector2 heading = new Vector2();
+    private final PositionComponent scratchPosition = new PositionComponent();
     protected final Array<Entity> nearby = new Array<>(false, 64); // Scratch list for grid queries
+    private final Array<Entity> obstacles = new Array<>(false, 16); // Separate list: avoidance runs mid-movement
     private final Vector2 waterTarget = new Vector2();
     private ImmutableArray<Entity> waterEntities;
     private ImmutableArray<Entity> allCreatures;
@@ -148,11 +150,29 @@ public abstract class CreatureSystem extends IteratingSystem {
         }
 
         boolean hitBoundary = moveToward(entity, behaviour.targetPoint, Traits.speed(dna), deltaTime);
-        if (hitBoundary) {
+        if (hitBoundary || isMakingNoProgress(behaviour, pos.position, deltaTime)) {
+            // Blocked by the map edge, a crowd or the water: forget this target and try another way
             vel.velocity.setZero();
             faceRandomDirection(behaviour, vision);
             pickTargetPointInVisibleArea(entity);
         }
+    }
+
+    /**
+     * True once a creature trying to reach a target has barely moved for {@link Balance#STUCK_SECONDS}.
+     */
+    protected static boolean isMakingNoProgress(BehaviourComponent behaviour, Vector2 position, float deltaTime) {
+        if (position.dst2(behaviour.progressAnchor) > Balance.STUCK_DISTANCE * Balance.STUCK_DISTANCE) {
+            behaviour.progressAnchor.set(position);
+            behaviour.progressTimer = 0f;
+            return false;
+        }
+        behaviour.progressTimer += deltaTime;
+        if (behaviour.progressTimer >= Balance.STUCK_SECONDS) {
+            behaviour.progressTimer = 0f;
+            return true;
+        }
+        return false;
     }
 
     private void startLookingAround(BehaviourComponent behaviour, VelocityComponent vel) {
@@ -193,13 +213,40 @@ public abstract class CreatureSystem extends IteratingSystem {
     protected void roamNearWater(Entity entity, float deltaTime) {
         PositionComponent pos = Mappers.position.get(entity);
         Entity pond = WaterSourceSystem.findNearestWater(waterEntities, pos);
-        if (pond == null || WaterSourceSystem.distanceFromShore(pond, pos) <= Balance.WATERHOLE_RANGE) {
+        if (pond == null) {
             explore(entity, deltaTime);
             return;
         }
-        float speed = Traits.speed(Mappers.genome.get(entity));
-        moveToward(entity, WaterSourceSystem.approachPoint(pond, waterTarget), speed, deltaTime);
-        Mappers.behaviour.get(entity).hasTarget = false; // Pick a fresh wander target on arrival
+        // Wander from point to point within the band around the pond. Switching between "walk to the pond" and
+        // "wander" at a fixed distance made creatures flip back and forth on that line and twitch in place.
+        BehaviourComponent behaviour = Mappers.behaviour.get(entity);
+        boolean needsTarget = !behaviour.hasTarget && !behaviour.waitingAtTarget;
+        if (needsTarget || (behaviour.hasTarget && !isAtWaterhole(pond, behaviour.targetPoint))) {
+            pickTargetNearWater(pond, pos, behaviour);
+        }
+        explore(entity, deltaTime);
+    }
+
+    /** True if a creature standing at {@code point} would be within waterhole range of the pond. */
+    private boolean isAtWaterhole(Entity pond, Vector2 point) {
+        scratchPosition.position.set(point);
+        return WaterSourceSystem.distanceFromShore(pond, scratchPosition) <= Balance.WATERHOLE_RANGE;
+    }
+
+    /** A point in the band around the pond, on the creature's side of it so it doesn't keep crossing over. */
+    private void pickTargetNearWater(Entity pond, PositionComponent pos, BehaviourComponent behaviour) {
+        Vector2 center = Mappers.position.get(pond).position;
+        float radius = Mappers.waterSource.get(pond).radius;
+        float towardCreature = MathUtils.atan2(pos.position.y + World.CREATURE_HALF_SIZE - center.y,
+            pos.position.x + World.CREATURE_HALF_SIZE - center.x);
+        float angle = towardCreature + MathUtils.random(-MathUtils.HALF_PI, MathUtils.HALF_PI);
+        float distance = radius + MathUtils.random(0f, Balance.WATERHOLE_RANGE * 0.8f);
+        behaviour.targetPoint.set(
+            MathUtils.clamp(center.x + MathUtils.cos(angle) * distance - World.CREATURE_HALF_SIZE, 0f, World.WIDTH - World.CREATURE_SIZE),
+            MathUtils.clamp(center.y + MathUtils.sin(angle) * distance - World.CREATURE_HALF_SIZE, 0f, World.HEIGHT - World.CREATURE_SIZE));
+        WaterSourceSystem.pushOutOfDeepWater(waterEntities, behaviour.targetPoint);
+        behaviour.hasTarget = true;
+        behaviour.waitingAtTarget = false;
     }
 
     /** Walk to the nearest pond and drink there. */
@@ -307,8 +354,10 @@ public abstract class CreatureSystem extends IteratingSystem {
         PositionComponent pos = Mappers.position.get(entity);
         VelocityComponent vel = Mappers.velocity.get(entity);
 
-        // Deep water can't be crossed: slide along its edge, i.e. walk around the pond
         heading.set(directionX, directionY);
+        // Swerve around creatures standing in the way (resting, eating, drinking) instead of walking into them
+        avoidStandingCreatures(entity, pos.position, heading);
+        // Deep water can't be crossed: slide along its edge, i.e. walk around the pond
         WaterSourceSystem.slideAlongDeepWater(waterEntities, pos.position, heading, speed * deltaTime);
         vel.velocity.set(heading.x * speed, heading.y * speed);
         pos.position.mulAdd(vel.velocity, deltaTime);
@@ -321,6 +370,45 @@ public abstract class CreatureSystem extends IteratingSystem {
                 (float) Math.toDegrees(Math.atan2(vel.velocity.y, vel.velocity.x));
         }
         return hitBoundary;
+    }
+
+    /**
+     * Bends a unit heading away from creatures that are standing still just ahead. Collisions won't push a
+     * standing creature aside (so it doesn't twitch), which means a walker has to go around it instead.
+     * Moving creatures aren't avoided: collisions sort those out, and a predator mustn't swerve around its prey.
+     */
+    private void avoidStandingCreatures(Entity self, Vector2 position, Vector2 heading) {
+        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
+        if (index == null) {
+            return;
+        }
+        index.creatures().query(position.x, position.y, Balance.AVOID_RANGE, obstacles);
+        float pushX = 0f;
+        float pushY = 0f;
+        for (Entity other : obstacles) {
+            if (other == self || !Mappers.velocity.get(other).velocity.isZero()) {
+                continue;
+            }
+            Vector2 otherPos = Mappers.position.get(other).position;
+            float dx = otherPos.x - position.x;
+            float dy = otherPos.y - position.y;
+            float distance = (float) Math.sqrt(dx * dx + dy * dy);
+            if (distance > Balance.AVOID_RANGE || distance < 0.01f) {
+                continue;
+            }
+            float ahead = (dx * heading.x + dy * heading.y) / distance; // 1 = dead ahead, 0 = beside
+            if (ahead <= 0.3f) {
+                continue;
+            }
+            // Steer toward whichever side it isn't on; closer and more directly ahead counts more
+            float side = heading.x * dy - heading.y * dx >= 0f ? -1f : 1f;
+            float weight = (1f - distance / Balance.AVOID_RANGE) * ahead;
+            pushX += -heading.y * side * weight;
+            pushY += heading.x * side * weight;
+        }
+        if (pushX != 0f || pushY != 0f) {
+            heading.add(pushX * Balance.AVOID_STRENGTH, pushY * Balance.AVOID_STRENGTH).nor();
+        }
     }
 
     private boolean clampToMap(PositionComponent pos) {

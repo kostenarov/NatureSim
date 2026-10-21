@@ -116,6 +116,12 @@ public class PreySystem extends CreatureSystem {
             stop(entity);
         } else {
             moveToward(entity, foodPos.position, Traits.speed(Mappers.genome.get(entity)), deltaTime);
+            BehaviourComponent behaviour = Mappers.behaviour.get(entity);
+            if (isMakingNoProgress(behaviour, pos.position, deltaTime)) {
+                // Others are crowding this food: leave it to them for a while and look for another
+                behaviour.ignoredFood = food;
+                behaviour.ignoreFoodTimer = Balance.IGNORE_BLOCKED_FOOD_SECONDS;
+            }
         }
     }
 
@@ -131,11 +137,14 @@ public class PreySystem extends CreatureSystem {
             candidates = nearby;
         }
 
+        BehaviourComponent behaviour = Mappers.behaviour.get(entity);
+        Entity ignored = behaviour.ignoreFoodTimer > 0f ? behaviour.ignoredFood : null;
         Entity nearestFood = null;
         float nearestDistance = Float.MAX_VALUE;
         for (Entity food : candidates) {
-            if (Mappers.foodSource.get(food).consumed) {
-                continue; // Already eaten this frame, removed next frame
+            // Skip food eaten this frame (removed next frame) and food a crowd kept us from
+            if (Mappers.foodSource.get(food).consumed || food == ignored) {
+                continue;
             }
             PositionComponent foodPos = Mappers.position.get(food);
             float distance = pos.position.dst(foodPos.position);
@@ -154,6 +163,7 @@ public class PreySystem extends CreatureSystem {
     protected void processEntity(Entity entity, float deltaTime) {
         BehaviourComponent behaviour = Mappers.behaviour.get(entity);
         behaviour.fleeTimer = Math.max(0f, behaviour.fleeTimer - deltaTime);
+        behaviour.ignoreFoodTimer = Math.max(0f, behaviour.ignoreFoodTimer - deltaTime);
         super.processEntity(entity, deltaTime);
     }
 
@@ -268,7 +278,9 @@ public class PreySystem extends CreatureSystem {
                 continue;
             }
             BehaviourComponent otherBehaviour = Mappers.behaviour.get(other);
-            if (otherBehaviour.fleeTimer > Balance.ALARM_DECAY && (freshest == null || otherBehaviour.fleeTimer > freshest.fleeTimer)) {
+            // Only a fresh scare spreads, and it always lasts a while; passing on a few milliseconds of fear made
+            // prey flicker between fleeing and not
+            if (otherBehaviour.fleeTimer > Balance.ALARM_DECAY + Balance.MIN_ALARM && (freshest == null || otherBehaviour.fleeTimer > freshest.fleeTimer)) {
                 freshest = otherBehaviour;
             }
         }

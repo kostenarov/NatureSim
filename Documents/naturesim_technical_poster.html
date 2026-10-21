@@ -76,7 +76,7 @@
                 NatureSim: <span class="bg-gradient-to-r from-accentMint to-accentGreen bg-clip-text text-transparent">Ashley ECS Engineering Cockpit</span>
             </h1>
             <p class="text-slate-400 text-sm max-w-3xl font-light">
-                An interactive demonstration of JVM cache locality, decouplet genetics, and dual-tier sensory hunting systems running within the <strong>Ashley ECS framework</strong>.
+                An interactive demonstration of JVM cache locality, genes with trade-offs, and dual-tier sensory hunting systems running within the <strong>Ashley ECS framework</strong>.
             </p>
         </div>
         <div class="flex flex-wrap gap-3 shrink-0">
@@ -145,7 +145,7 @@
             </div>
 
             <p class="text-slate-400 text-xs leading-relaxed mb-3">
-                Select components on the entity container to dynamically subscribe it to active engine systems based on <strong>Aspect Family Matchers</strong>:
+                Select components on the entity container to dynamically subscribe it to active engine systems based on Ashley <strong>Family matchers</strong>:
             </p>
 
             <!-- Interactive Entity Customizer -->
@@ -162,6 +162,8 @@
                     <button onclick="toggleComponent('comp-repro')" id="comp-repro" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">ReproductionComponent</button>
                     <button onclick="toggleComponent('comp-vision')" id="comp-vision" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">VisionComponent</button>
                     <button onclick="toggleComponent('comp-gender')" id="comp-gender" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">GenderComponent</button>
+                    <button onclick="toggleComponent('comp-behaviour')" id="comp-behaviour" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">BehaviourComponent</button>
+                    <button onclick="toggleComponent('comp-age')" id="comp-age" class="px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all duration-200 bg-slate-900 border-borderGray text-slate-500 font-normal">AgeComponent</button>
                 </div>
             </div>
         </div>
@@ -212,8 +214,9 @@
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
         <div class="md:col-span-2 flex flex-col sm:flex-row gap-5 items-center md:items-start">
             <div class="text-center sm:text-left">
-                <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold block">Maximum Tested Capacity</span>
-                <span class="text-2xl font-bold font-display text-white mt-1 block">1,000+ Agents</span>
+                <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold block">Measured Capacity</span>
+                <span class="text-2xl font-bold font-display text-white mt-1 block">~2,000 Creatures</span>
+                <span class="text-slate-400 text-[10px] mt-0.5 block font-mono">~1 ms per simulation step</span>
                 <span class="text-accentGreen text-xs mt-1 block font-semibold font-mono"><i class="fa-solid fa-bolt"></i> GPU OpenGL Render via SpriteBatch</span>
             </div>
             <div class="h-px sm:h-12 w-full sm:w-px bg-borderGray my-2 sm:my-0"></div>
@@ -226,13 +229,13 @@
 
         <!-- Future Roadmap list -->
         <div class="md:col-span-2 flex flex-col gap-2">
-            <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">Scaling Roadmap & Performance Milestones</span>
+            <span class="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">Milestones & Roadmap</span>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div class="flex items-center gap-2 bg-darkBg/60 border border-borderGray/50 p-2 rounded-lg">
                     <i class="fa-solid fa-diagram-project text-accentMint text-sm shrink-0"></i>
                     <div>
-                        <strong class="text-slate-300 block font-sans">Quadtree Partitioning</strong>
-                        <span class="text-slate-500 text-[9px] font-mono">Drop checks from O(N²) to O(N)</span>
+                        <strong class="text-slate-300 block font-sans">Spatial Hash Grid <span class="text-accentGreen">(shipped)</span></strong>
+                        <span class="text-slate-500 text-[9px] font-mono">Mating checks 14 ms → 0.16 ms per step</span>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 bg-darkBg/60 border border-borderGray/50 p-2 rounded-lg">
@@ -258,7 +261,9 @@
         'comp-pred': false,
         'comp-repro': false,
         'comp-vision': false,
-        'comp-gender': false
+        'comp-gender': false,
+        'comp-behaviour': false,
+        'comp-age': false
     };
 
     function toggleComponent(id) {
@@ -277,36 +282,38 @@
         const container = document.getElementById('engine-matcher-console');
         container.innerHTML = '';
 
+        // The actual systems in NatureSim and the Ashley Families they iterate over
+        const creatureBody = componentState['comp-pos'] && componentState['comp-vel'] && componentState['comp-genome'] && componentState['comp-vision'] && componentState['comp-gender'] && componentState['comp-stats'] && componentState['comp-behaviour'];
         const matchedSystems = [
             {
-                name: 'MovementSystem',
-                aspect: 'Aspect.all(PositionComponent.class, VelocityComponent.class)',
-                match: componentState['comp-pos'] && componentState['comp-vel']
-            },
-            {
-                name: 'VitalitySystem',
-                aspect: 'Aspect.all(StatsComponent.class)',
-                match: componentState['comp-stats']
+                name: 'PreySystem',
+                aspect: 'Family.all(Position, Velocity, Genome, Vision, Gender, Stats, Behaviour).exclude(Predator, Scavenger)',
+                match: creatureBody && !componentState['comp-pred']
             },
             {
                 name: 'PredatorSystem',
-                aspect: 'Aspect.all(PositionComponent.class, PredatorComponent.class, StatsComponent.class)',
-                match: componentState['comp-pos'] && componentState['comp-pred'] && componentState['comp-stats']
+                aspect: 'Family.all(Position, Velocity, Genome, Vision, Gender, Stats, Behaviour, Predator)',
+                match: creatureBody && componentState['comp-pred']
+            },
+            {
+                name: 'MetabolismSystem',
+                aspect: 'Family.all(StatsComponent, GenomeComponent, BehaviourComponent)',
+                match: componentState['comp-stats'] && componentState['comp-genome'] && componentState['comp-behaviour']
             },
             {
                 name: 'MatingSystem',
-                aspect: 'Aspect.all(PositionComponent.class, StatsComponent.class, ReproductionComponent.class, GenderComponent.class)',
-                match: componentState['comp-pos'] && componentState['comp-stats'] && componentState['comp-repro'] && componentState['comp-gender']
+                aspect: 'Family.all(Position, Stats, Genome, Gender, Reproduction)',
+                match: componentState['comp-pos'] && componentState['comp-stats'] && componentState['comp-genome'] && componentState['comp-gender'] && componentState['comp-repro']
             },
             {
-                name: 'GeneticsSystem',
-                aspect: 'Aspect.all(GenomeComponent.class)',
-                match: componentState['comp-genome']
+                name: 'AgingSystem',
+                aspect: 'Family.all(AgeComponent, StatsComponent)',
+                match: componentState['comp-age'] && componentState['comp-stats']
             },
             {
-                name: 'VisionRenderingSystem',
-                aspect: 'Aspect.all(PositionComponent.class, VisionComponent.class)',
-                match: componentState['comp-pos'] && componentState['comp-vision']
+                name: 'CollisionSystem',
+                aspect: 'Family.all(PositionComponent, StatsComponent)',
+                match: componentState['comp-pos'] && componentState['comp-stats']
             }
         ];
 
@@ -331,7 +338,7 @@
             container.innerHTML = `
                     <div class="flex flex-col items-center justify-center text-center h-full text-slate-500 py-6">
                         <i class="fa-solid fa-triangle-exclamation text-xl mb-1 text-accentOrange/70"></i>
-                        <span>No Ashley Systems subscribed to this specific Aspect pattern.</span>
+                        <span>No Ashley system matches this combination of components.</span>
                     </div>
                 `;
         }

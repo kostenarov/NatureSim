@@ -1,39 +1,113 @@
 @startuml
-title NatureSim - Brief UML
-package "Core" {
-  class Main {
-    + create()
-    + render()
+title NatureSim - Overview
+left to right direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+
+package "Screens & drawing" {
+  class Main
+  class StartScreen
+  class SimulationScreen {
+    fixed 60 Hz step, input, HUD
   }
+  class WorldRenderer
+  class GraphRenderer
+  class Minimap
+  class CameraController
 }
-package "Systems" {
-  class MovementSystem
+
+package "Simulation setup & rules" {
+  class Simulation {
+    + createEngine(config)
+    + spawnStartingCreatures()
+    + spawn(role, x, y, age)
+  }
+  class SimulationConfig
+  class Balance
+  class Traits {
+    genes -> abilities & costs
+  }
+  class Creatures {
+    PREY / PREDATORS / SCAVENGERS families
+  }
+  class Mappers
+  class World
+  class HistoryExporter
+}
+
+package "Systems (in run order)" {
+  class SpatialIndexSystem
+  class ClockSystem
+  class LineageSystem
+  class WaterSourceSystem
   class FoodSourceSystem
-  class CameraSystem
+  class MatingSystem
+  abstract class CreatureSystem {
+    movement, wandering, drinking,
+    sight, courtship, exhaustion
+  }
+  class PredatorSystem
+  class PreySystem
+  class ScavengerSystem
+  class MetabolismSystem
+  class AgingSystem
+  class CollisionSystem
+  class WaterBarrierSystem
+  class DeathSystem
+  class CarcassSystem
+  class MigrationSystem
+  class PopulationHistory
+  class SpatialGrid
 }
-package "Entity" {
+
+package "Components (data)" {
   class PositionComponent
   class VelocityComponent
+  class GenomeComponent
+  class GenderComponent
   class StatsComponent
-  class BehaviourComponent
   class VisionComponent
+  class BehaviourComponent
+  class ReproductionComponent
+  class AgeComponent
+  class LineageComponent
+  class PredatorComponent
+  class ScavengerComponent
   class FoodSourceComponent
+  class WaterSourceComponent
+  class CarcassComponent
 }
+
 package "Enums" {
   enum EntityBehaviour
   enum Gender
+  enum Role
 }
-Main --> MovementSystem
-Main --> FoodSourceSystem
-Main --> CameraSystem
-MovementSystem ..> PositionComponent
-MovementSystem ..> VelocityComponent
-MovementSystem ..> StatsComponent
-MovementSystem ..> BehaviourComponent
-MovementSystem ..> VisionComponent
-MovementSystem ..> FoodSourceComponent
-FoodSourceSystem ..> FoodSourceComponent
-FoodSourceSystem ..> PositionComponent
-CameraSystem ..> PositionComponent
+
+Main --> StartScreen
+Main --> SimulationScreen
+StartScreen --> SimulationConfig
+SimulationScreen --> Simulation
+SimulationScreen --> WorldRenderer
+SimulationScreen --> GraphRenderer
+SimulationScreen --> Minimap
+SimulationScreen --> CameraController
+SimulationScreen --> HistoryExporter
+Simulation --> SimulationConfig
+
+CreatureSystem <|-- PredatorSystem
+CreatureSystem <|-- PreySystem
+CreatureSystem <|-- ScavengerSystem
+SpatialIndexSystem --> SpatialGrid
+CreatureSystem ..> Traits
+MetabolismSystem ..> Traits
+MatingSystem ..> Creatures
+DeathSystem ..> CarcassSystem
+MigrationSystem ..> Simulation
+HistoryExporter ..> PopulationHistory
+GraphRenderer ..> PopulationHistory
+
 BehaviourComponent --> EntityBehaviour
+GenderComponent --> Gender
+Creatures ..> Role
 @enduml

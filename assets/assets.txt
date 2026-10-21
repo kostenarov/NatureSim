@@ -1,5 +1,6 @@
-agent.png
 agentPredator.png
+agentPrey.png
+agentScavenger.png
 field.png
 food.png
 ui/font-list.fnt

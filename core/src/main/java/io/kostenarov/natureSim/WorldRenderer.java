@@ -20,7 +20,6 @@ import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
-import io.kostenarov.natureSim.Enums.Role;
 import io.kostenarov.natureSim.Systems.CarcassSystem;
 import io.kostenarov.natureSim.Systems.ClockSystem;
 import io.kostenarov.natureSim.Systems.WaterSourceSystem;
@@ -32,6 +31,7 @@ import space.earlygrey.shapedrawer.ShapeDrawer;
  */
 public class WorldRenderer implements Disposable {
     private static final float TILE_SIZE = 40f;
+    private static final float FOOD_DRAW_SIZE = 16f; // The size food has in the simulation (FoodSourceSystem)
     private static final int CIRCLE_SEGMENTS = 48;
     private static final float CONE_SEGMENT_DEGREES = 5f;
 
@@ -41,6 +41,7 @@ public class WorldRenderer implements Disposable {
 
     private final Texture preyTexture;
     private final Texture predatorTexture;
+    private final Texture scavengerTexture;
     private final Texture foodTexture;
     private final Texture carcassTexture;
     private final Texture fieldTexture;
@@ -55,7 +56,6 @@ public class WorldRenderer implements Disposable {
     private final Color scentFillColor = new Color(1f, 0.1f, 0.1f, 0.10f);
     private final Color scentOutlineColor = new Color(1f, 0.1f, 0.1f, 0.25f);
     private final Color scentTargetColor = new Color(1f, 0.2f, 0.2f, 0.6f);
-    private final Color scavengerColor = new Color(0.78f, 0.55f, 1f, 1f);
     private final Color nightColor = new Color(0.02f, 0.03f, 0.12f, 0f);
     private final Color groundTint = new Color(1f, 1f, 1f, 1f);
     private final Color carcassTint = new Color(1f, 1f, 1f, 1f);
@@ -87,9 +87,11 @@ public class WorldRenderer implements Disposable {
         this.shapeDrawer = shapeDrawer;
         this.config = config;
 
-        preyTexture = new Texture("agent.png");
+        preyTexture = new Texture("agentPrey.png");
         predatorTexture = new Texture("agentPredator.png");
-        foodTexture = createFoodTexture();
+        scavengerTexture = new Texture("agentScavenger.png");
+        foodTexture = new Texture("food.png");
+        foodTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear); // Drawn scaled down
         carcassTexture = createCarcassTexture();
         fieldTexture = new Texture(Gdx.files.internal("field.png"), true);
         fieldTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
@@ -103,16 +105,6 @@ public class WorldRenderer implements Disposable {
         creatures = engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get());
         carcasses = engine.getEntitiesFor(CarcassSystem.CARCASSES);
         clock = engine.getSystem(ClockSystem.class);
-    }
-
-    /** A simple green circle. */
-    private static Texture createFoodTexture() {
-        Pixmap pixmap = new Pixmap(16, 16, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0.2f, 0.8f, 0.2f, 1f);
-        pixmap.fillCircle(8, 8, 7);
-        Texture texture = new Texture(pixmap);
-        pixmap.dispose();
-        return texture;
     }
 
     /** A dark red-brown blot. */
@@ -265,8 +257,8 @@ public class WorldRenderer implements Disposable {
     private void drawFood() {
         for (Entity item : food) {
             PositionComponent pos = Mappers.position.get(item);
-            if (isVisible(pos.position.x, pos.position.y, 16f)) {
-                batch.draw(foodTexture, pos.position.x, pos.position.y);
+            if (isVisible(pos.position.x, pos.position.y, FOOD_DRAW_SIZE)) {
+                batch.draw(foodTexture, pos.position.x, pos.position.y, FOOD_DRAW_SIZE, FOOD_DRAW_SIZE);
             }
         }
     }
@@ -275,16 +267,22 @@ public class WorldRenderer implements Disposable {
         for (Entity creature : creatures) {
             PositionComponent pos = Mappers.position.get(creature);
             if (isVisible(pos.position.x, pos.position.y, World.CREATURE_SIZE)) {
-                if (tintGene >= 0) {
-                    batch.setColor(geneColor(Mappers.genome.get(creature).genes[tintGene]));
-                } else {
-                    batch.setColor(Creatures.role(creature) == Role.SCAVENGER ? scavengerColor : Color.WHITE);
-                }
-                Texture texture = Creatures.isPredator(creature) ? predatorTexture : preyTexture;
-                batch.draw(texture, pos.position.x, pos.position.y);
+                batch.setColor(tintGene >= 0 ? geneColor(Mappers.genome.get(creature).genes[tintGene]) : Color.WHITE);
+                batch.draw(textureFor(creature), pos.position.x, pos.position.y);
             }
         }
         batch.setColor(Color.WHITE);
+    }
+
+    private Texture textureFor(Entity creature) {
+        switch (Creatures.role(creature)) {
+            case PREDATOR:
+                return predatorTexture;
+            case SCAVENGER:
+                return scavengerTexture;
+            default:
+                return preyTexture;
+        }
     }
 
     /** Blue for a gene of 0, through green, to red for 2. */
@@ -354,6 +352,7 @@ public class WorldRenderer implements Disposable {
     public void dispose() {
         preyTexture.dispose();
         predatorTexture.dispose();
+        scavengerTexture.dispose();
         foodTexture.dispose();
         carcassTexture.dispose();
         fieldTexture.dispose();

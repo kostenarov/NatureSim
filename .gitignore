@@ -25,11 +25,3 @@ Thumbs.db
 # Logs
 logs/
 *.log
-
-# Generated assets
-assets/*.png
-assets/*.atlas
-
-# Ignore local gradle wrapper jar download
-gradle/wrapper/gradle-wrapper.jar
-

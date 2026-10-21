@@ -18,10 +18,7 @@ public class FoodSourceSystem extends EntitySystem {
     private static final float FOOD_SIZE = 16f;
     private static final int MAX_PLACEMENT_ATTEMPTS = 20;
 
-    private final int initialFood;
-    private final int maxFood;
-    private final float spawnInterval; // Seconds between food spawns
-    private final float nutrition;     // Hunger each item restores
+    private final SimulationConfig config; // Food settings are read live, so they can change mid-run
 
     private float spawnTimer = 0f;
     private ImmutableArray<Entity> foodEntities;
@@ -31,10 +28,7 @@ public class FoodSourceSystem extends EntitySystem {
     }
 
     public FoodSourceSystem(SimulationConfig config) {
-        this.initialFood = config.initialFood;
-        this.maxFood = config.maxFood;
-        this.spawnInterval = config.foodSpawnInterval;
-        this.nutrition = config.foodNutrition;
+        this.config = config;
     }
 
     @Override
@@ -43,7 +37,7 @@ public class FoodSourceSystem extends EntitySystem {
         foodEntities = engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get());
 
         // Spawn initial food sources
-        for (int i = 0; i < initialFood; i++) {
+        for (int i = 0; i < config.initialFood; i++) {
             spawnFoodSource();
         }
     }
@@ -62,12 +56,22 @@ public class FoodSourceSystem extends EntitySystem {
         // Seasons: food grows faster in summer and barely at all in winter
         ClockSystem clock = getEngine().getSystem(ClockSystem.class);
         spawnTimer += deltaTime * (clock != null ? clock.growthFactor() : 1f);
+        float spawnInterval = Math.max(0.01f, config.foodSpawnInterval);
         while (spawnTimer >= spawnInterval) {
             spawnTimer -= spawnInterval;
-            if (foodEntities.size() < maxFood) {
+            if (foodEntities.size() < config.maxFood) {
                 spawnFoodSource();
             }
         }
+    }
+
+    /** Progress toward the next food item, for saving a world. */
+    public float getSpawnTimer() {
+        return spawnTimer;
+    }
+
+    public void setSpawnTimer(float spawnTimer) {
+        this.spawnTimer = spawnTimer;
     }
 
     private void spawnFoodSource() {
@@ -87,7 +91,7 @@ public class FoodSourceSystem extends EntitySystem {
         Entity food = getEngine().createEntity();
         food.add(pos);
         FoodSourceComponent item = new FoodSourceComponent();
-        item.nutritionValue = nutrition;
+        item.nutritionValue = config.foodNutrition;
         food.add(item);
         getEngine().addEntity(food);
     }

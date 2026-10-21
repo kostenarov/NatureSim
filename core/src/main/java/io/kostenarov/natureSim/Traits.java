@@ -14,10 +14,16 @@ import io.kostenarov.natureSim.Components.StatsComponent;
  *   <li>METABOLISM: survives starvation and dehydration longer, but burns energy faster while active.</li>
  *   <li>RECOVERY_RATE: regains energy faster while resting, but burns more food while resting.</li>
  *   <li>HUNGER/THIRST_SENSITIVITY: starts looking for food/water earlier. Safer, but spends more time foraging.</li>
- *   <li>SCENT_RANGE (predators and scavengers): smells prey or carcasses from farther away, at a food cost.</li>
+ *   <li>SCENT_RANGE: smells prey, carcasses (or, for prey, predators) from farther away, at a food cost.</li>
  *   <li>SIZE: a tougher body takes less damage (and predators bite harder), but a big body needs more food.</li>
  *   <li>STEALTH: harder to spot, but stealthy movement is slower when chasing or fleeing.</li>
+ *   <li>ORNAMENT: females prefer showier males (sexual selection), but showiness makes a creature easier to spot
+ *       and costs a little food.</li>
  * </ul>
+ * Some genes work differently by role: prey smell predators at short range with SCENT_RANGE (predators and
+ * scavengers smell prey and carcasses much further), and SIZE makes scavengers eat faster.
+ * Creatures can only breed with partners whose genes are similar enough ({@link #geneticDistance}), so groups
+ * that drift apart become separate species.
  * Creatures heal slowly while they have food and water in them.
  */
 public final class Traits {
@@ -79,9 +85,50 @@ public final class Traits {
         return 0.6f + gene(dna, GenomeComponent.SIZE) * 0.4f;
     }
 
-    /** How easily others spot this creature (1.25 down to 0.75): scales the range at which it can be seen. */
+    /** The largest {@link #visibility} any creature can have (no stealth, full ornament). */
+    public static final float MAX_VISIBILITY = 1.45f;
+
+    /**
+     * How easily others spot this creature (1.45 down to 0.75): scales the range at which it can be seen.
+     * Stealth hides it; ornament gives it away.
+     */
     public static float visibility(GenomeComponent dna) {
-        return 1.25f - gene(dna, GenomeComponent.STEALTH) * 0.25f;
+        return 1.25f - gene(dna, GenomeComponent.STEALTH) * 0.25f + gene(dna, GenomeComponent.ORNAMENT) * 0.1f;
+    }
+
+    /** How far a prey can smell a predator (42 to 126 px): short, but works in the dark and behind it. */
+    public static float preySmellRange(GenomeComponent dna) {
+        return scentRange(dna) * Balance.PREY_SCENT_SHARE;
+    }
+
+    /** Food a scavenger eats per second: a bigger body eats faster. */
+    public static float scavengerBiteRate(GenomeComponent dna) {
+        return Balance.SCAVENGER_BITE_RATE * toughness(dna);
+    }
+
+    // --- Mates -----------------------------------------------------------------------------------------
+
+    /** How different two genomes are: the straight-line distance between them across all genes. */
+    public static float geneticDistance(GenomeComponent a, GenomeComponent b) {
+        float sum = 0f;
+        for (int i = 0; i < a.genes.length; i++) {
+            float difference = a.genes[i] - b.genes[i];
+            sum += difference * difference;
+        }
+        return (float) Math.sqrt(sum);
+    }
+
+    /** True if two creatures are genetically close enough to have offspring together. */
+    public static boolean canInterbreed(GenomeComponent a, GenomeComponent b) {
+        return geneticDistance(a, b) <= Balance.MAX_MATE_DISTANCE;
+    }
+
+    /**
+     * How much a female likes a male: showier is better, and so is similar (like prefers like, which helps
+     * groups that are drifting apart to stay apart).
+     */
+    public static float attractiveness(GenomeComponent female, GenomeComponent male) {
+        return gene(male, GenomeComponent.ORNAMENT) - Balance.MATE_SIMILARITY_PREFERENCE * geneticDistance(female, male);
     }
 
     /** Speed multiplier while chasing or fleeing (1.1 down to 0.9): stealthy movement is slower. */
@@ -104,6 +151,7 @@ public final class Traits {
         float speed = speedFactor(dna);
         float upkeep = 0.4f + 0.4f * speed * speed + 0.2f * (visionRange(dna) / AVERAGE_VISION_RANGE);
         upkeep += 0.5f * (toughness(dna) - 1f); // A bigger body needs more food
+        upkeep += 0.05f * (gene(dna, GenomeComponent.ORNAMENT) - 1f); // So does showing off
         if (usesScent) {
             upkeep += 0.15f * (scentFactor(dna) - 1f);
         }

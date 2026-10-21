@@ -42,7 +42,10 @@ class MatingTest extends SimTestSupport {
         assertEquals(3, predators, "predators");
     }
 
-    /** Mates a parent with all genes 0.2 and one with all genes 1.8 (no mutation) and returns the child. */
+    /**
+     * Mates a parent with all genes 0.7 and one with all genes 1.3 (no mutation) and returns the child.
+     * (Much further apart and they would be too different to breed.)
+     */
     private static Entity crossChild() {
         SimulationConfig cfg = new SimulationConfig();
         cfg.mutationRate = 0f;
@@ -50,8 +53,8 @@ class MatingTest extends SimTestSupport {
         e.addSystem(new MatingSystem(cfg));
         Entity a = creature(e, 100, 100, Gender.MALE, false);
         Entity b = creature(e, 110, 100, Gender.FEMALE, false);
-        Arrays.fill(a.getComponent(GenomeComponent.class).genes, 0.2f);
-        Arrays.fill(b.getComponent(GenomeComponent.class).genes, 1.8f);
+        Arrays.fill(a.getComponent(GenomeComponent.class).genes, 0.7f);
+        Arrays.fill(b.getComponent(GenomeComponent.class).genes, 1.3f);
         e.update(DT);
         assertEquals(3, creatureCount(e), "parents did not mate");
         return e.getEntities().get(2);
@@ -65,9 +68,9 @@ class MatingTest extends SimTestSupport {
             GenomeComponent dna = crossChild().getComponent(GenomeComponent.class);
             boolean fromParents = true, sawLow = false, sawHigh = false;
             for (float g : dna.genes) {
-                fromParents &= (g == 0.2f || g == 1.8f);
-                sawLow |= g == 0.2f;
-                sawHigh |= g == 1.8f;
+                fromParents &= (g == 0.7f || g == 1.3f);
+                sawLow |= g == 0.7f;
+                sawHigh |= g == 1.3f;
             }
             if (fromParents) pure++;
             if (sawLow && sawHigh) mixed++;

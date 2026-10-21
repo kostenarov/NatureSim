@@ -60,10 +60,14 @@ class NavigationTest extends SimTestSupport {
         stats(prey).hunger = 10f;
 
         run(e, 2f);
+        // How far it gets from here over the next 3 s. (Not where it ends up: wandering may bring it back.)
         Vector2 before = new Vector2(Mappers.position.get(prey).position);
-        run(e, 3f);
-        float moved = before.dst(Mappers.position.get(prey).position);
-        assertTrue(moved > 50f, "moved only " + moved + " px in 3 s");
+        float farthest = 0f;
+        for (int frame = 0; frame < 180; frame++) {
+            e.update(DT);
+            farthest = Math.max(farthest, before.dst(Mappers.position.get(prey).position));
+        }
+        assertTrue(farthest > 50f, "got only " + farthest + " px away in 3 s");
         assertTrue(WaterSourceSystem.distanceFromShore(pond, Mappers.position.get(prey)) <= Balance.WATERHOLE_RANGE + 50f,
             "stayed around the waterhole");
     }

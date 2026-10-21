@@ -4,6 +4,7 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.files.FileHandle;
 import com.kotcrab.vis.ui.VisUI;
 
 /**
@@ -29,6 +30,38 @@ public class Main extends Game {
     public void startSimulation() {
         config.save(settings);
         switchTo(new SimulationScreen(this, config));
+    }
+
+    /** Where F5 saves the running world, in the user's home folder. */
+    public static FileHandle savedWorldFile() {
+        return Gdx.files.external("NatureSim/saves/world.json");
+    }
+
+    public static boolean hasSavedWorld() {
+        return savedWorldFile().exists();
+    }
+
+    /**
+     * Loads the saved world and switches to it, returning true. If that fails, stays where it is, says why
+     * ({@code current} is the running world to show the message in, or null on the start screen) and returns false.
+     */
+    public boolean loadSavedWorld(SimulationScreen current) {
+        String problem;
+        try {
+            if (hasSavedWorld()) {
+                switchTo(new SimulationScreen(this, WorldSave.load(savedWorldFile().readString("UTF-8"))));
+                return true;
+            }
+            problem = "There is no saved world yet (F5 saves one)";
+        } catch (RuntimeException e) {
+            problem = "Couldn't load the saved world: " + e.getMessage();
+        }
+        if (current != null) {
+            current.showMessage(problem);
+        } else {
+            Gdx.app.error("NatureSim", problem);
+        }
+        return false;
     }
 
     private void switchTo(Screen next) {

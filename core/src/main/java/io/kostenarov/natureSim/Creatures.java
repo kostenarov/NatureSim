@@ -13,6 +13,7 @@ import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Components.ReproductionComponent;
 import io.kostenarov.natureSim.Components.ScavengerComponent;
+import io.kostenarov.natureSim.Components.SpeciesComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
@@ -58,6 +59,7 @@ public final class Creatures {
 
         creature.add(new ReproductionComponent());
         creature.add(new AgeComponent());
+        creature.add(new SpeciesComponent());
 
         LineageSystem lineage = engine.getSystem(LineageSystem.class);
         creature.add(new LineageComponent(lineage != null ? lineage.nextId() : 0L));
@@ -106,8 +108,11 @@ public final class Creatures {
         return Mappers.predator.get(creature) != null;
     }
 
-    /** Predators and scavengers sniff things out, which costs extra upkeep (see Traits.upkeep). */
+    /**
+     * Whether a creature's sense of smell costs it upkeep (see Traits.upkeep). Every role uses smell now: predators
+     * and scavengers to find prey and carcasses, prey to notice predators close by.
+     */
     public static boolean usesScent(Entity creature) {
-        return role(creature) != Role.PREY;
+        return true;
     }
 }

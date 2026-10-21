@@ -12,6 +12,7 @@ import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Components.ReproductionComponent;
 import io.kostenarov.natureSim.Components.ScavengerComponent;
+import io.kostenarov.natureSim.Components.SpeciesComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
@@ -34,6 +35,7 @@ public final class Mappers {
     public static final ComponentMapper<PredatorComponent> predator = ComponentMapper.getFor(PredatorComponent.class);
     public static final ComponentMapper<ReproductionComponent> reproduction = ComponentMapper.getFor(ReproductionComponent.class);
     public static final ComponentMapper<ScavengerComponent> scavenger = ComponentMapper.getFor(ScavengerComponent.class);
+    public static final ComponentMapper<SpeciesComponent> species = ComponentMapper.getFor(SpeciesComponent.class);
     public static final ComponentMapper<StatsComponent> stats = ComponentMapper.getFor(StatsComponent.class);
     public static final ComponentMapper<VelocityComponent> velocity = ComponentMapper.getFor(VelocityComponent.class);
     public static final ComponentMapper<VisionComponent> vision = ComponentMapper.getFor(VisionComponent.class);

@@ -17,6 +17,7 @@ import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Components.GenomeComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.PredatorComponent;
+import io.kostenarov.natureSim.Components.SpeciesComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
@@ -73,6 +74,7 @@ public class WorldRenderer implements Disposable {
     private final ImmutableArray<Entity> carcasses;
     private final ClockSystem clock; // May be null (no day/night or seasons)
 
+    public static final int TINT_SPECIES = GenomeComponent.COUNT; // Tint "gene" meaning: color by species
     private int tintGene = -1;
     private final Color tint = new Color(1f, 1f, 1f, 1f);
 
@@ -267,7 +269,7 @@ public class WorldRenderer implements Disposable {
         for (Entity creature : creatures) {
             PositionComponent pos = Mappers.position.get(creature);
             if (isVisible(pos.position.x, pos.position.y, World.CREATURE_SIZE)) {
-                batch.setColor(tintGene >= 0 ? geneColor(Mappers.genome.get(creature).genes[tintGene]) : Color.WHITE);
+                batch.setColor(tintFor(creature));
                 batch.draw(textureFor(creature), pos.position.x, pos.position.y);
             }
         }
@@ -285,13 +287,29 @@ public class WorldRenderer implements Disposable {
         }
     }
 
+    private Color tintFor(Entity creature) {
+        if (tintGene == TINT_SPECIES) {
+            SpeciesComponent kind = Mappers.species.get(creature);
+            return kind != null && kind.id > 0 ? speciesColor(kind.id) : Color.WHITE;
+        }
+        return tintGene >= 0 ? geneColor(Mappers.genome.get(creature).genes[tintGene]) : Color.WHITE;
+    }
+
+    /** A distinct color per species id: the hue steps round by the golden angle, so neighbouring ids differ. */
+    private Color speciesColor(int id) {
+        return tint.fromHsv((id * 137.5f) % 360f, 0.75f, 1f);
+    }
+
     /** Blue for a gene of 0, through green, to red for 2. */
     private Color geneColor(float gene) {
         float hue = 240f * (1f - MathUtils.clamp(gene / 2f, 0f, 1f));
         return tint.fromHsv(hue, 0.85f, 1f);
     }
 
-    /** Colors creatures by this gene (a GenomeComponent index), or -1 for their normal look. */
+    /**
+     * Colors creatures by this gene (a GenomeComponent index), by species ({@link #TINT_SPECIES}),
+     * or -1 for their normal look.
+     */
     public void setTintGene(int gene) {
         tintGene = gene;
     }

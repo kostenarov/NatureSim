@@ -29,6 +29,25 @@ public class LineageSystem extends EntitySystem {
         return nextId++;
     }
 
+    /** The id the next creature will get, for saving a world. */
+    public long peekNextId() {
+        return nextId;
+    }
+
+    public void setNextId(long nextId) {
+        this.nextId = nextId;
+    }
+
+    /** Every recorded birth as id -> {motherId, fatherId}, for saving a world. */
+    public LongMap<long[]> getParents() {
+        return parents;
+    }
+
+    /** Re-records a birth from a saved world. */
+    public void restoreParents(long id, long motherId, long fatherId) {
+        parents.put(id, new long[] {motherId, fatherId});
+    }
+
     /** Records a birth and counts it towards both parents' children. */
     public void recordBirth(Entity child, Entity mother, Entity father) {
         LineageComponent childLineage = Mappers.lineage.get(child);

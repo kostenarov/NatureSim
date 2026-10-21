@@ -2,6 +2,7 @@ package io.kostenarov.natureSim;
 
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.utils.FloatArray;
 import io.kostenarov.natureSim.Enums.Role;
@@ -9,7 +10,7 @@ import io.kostenarov.natureSim.Systems.PopulationHistory;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
 /**
- * Draws the history graphs: population of prey and predators, and the average value of each gene
+ * Draws the history graphs: population of prey, predators and scavengers, and the average value of each gene
  * over time. Must be called between batch.begin() and batch.end() with a screen-space projection.
  */
 public class GraphRenderer {
@@ -24,6 +25,7 @@ public class GraphRenderer {
         new Color(0.40f, 0.90f, 0.90f, 1f), // Thirst sense
         new Color(0.70f, 0.50f, 1.00f, 1f), // Scent
         new Color(0.75f, 0.75f, 0.75f, 1f), // Stealth
+        new Color(1.00f, 0.60f, 0.20f, 1f), // Ornament
     };
     private static final Color PREY_COLOR = new Color(0.45f, 0.90f, 0.45f, 1f);
     private static final Color PREDATOR_COLOR = new Color(0.95f, 0.35f, 0.35f, 1f);
@@ -31,10 +33,12 @@ public class GraphRenderer {
     private static final Color PANEL_COLOR = new Color(0.05f, 0.07f, 0.06f, 0.8f);
     private static final Color GRID_COLOR = new Color(1f, 1f, 1f, 0.12f);
     private static final float PADDING = 16f;
+    private static final float SWATCH_SPACE = 18f; // Color swatch in front of each legend entry
 
     private final SpriteBatch batch;
     private final ShapeDrawer shapes;
     private final BitmapFont font;
+    private final GlyphLayout layout = new GlyphLayout();
 
     public GraphRenderer(SpriteBatch batch, ShapeDrawer shapes, BitmapFont font) {
         this.batch = batch;
@@ -47,7 +51,10 @@ public class GraphRenderer {
         shapes.filledRectangle(x, y, width, height, PANEL_COLOR);
 
         float lineHeight = font.getLineHeight();
-        float chartWidth = width - 2 * PADDING - 230f; // Room for the legend on the right
+        // Room for the legends on the right: the population one, and the genes in two columns
+        float geneColumnWidth = textWidth("Hunger sense 0.00") + SWATCH_SPACE + PADDING;
+        float legendWidth = Math.max(textWidth("Scavengers 0000 (peak 0000)") + SWATCH_SPACE, 2 * geneColumnWidth);
+        float chartWidth = width - 3 * PADDING - legendWidth;
         float chartX = x + PADDING;
         float legendX = chartX + chartWidth + PADDING;
 
@@ -92,10 +99,11 @@ public class GraphRenderer {
         font.draw(batch, species + " average genes   (H: switch species)", chartX, geneTop);
         drawFrame(chartX, geneBottom, chartWidth, geneHeight);
         shapes.line(chartX, geneBottom + geneHeight / 2f, chartX + chartWidth, geneBottom + geneHeight / 2f, GRID_COLOR, 1f); // Gene = 1
-        legendY = geneTop - lineHeight;
+        int rows = (means.length + 1) / 2;
         for (int g = 0; g < means.length; g++) {
             drawLine(means[g], 2f, chartX, geneBottom, chartWidth, geneHeight, GENE_COLORS[g]);
-            legendY = legendEntry(PopulationHistory.GENE_NAMES[g] + String.format(" %.2f", last(means[g])), GENE_COLORS[g], legendX, legendY);
+            legendEntry(PopulationHistory.GENE_NAMES[g] + String.format(" %.2f", last(means[g])), GENE_COLORS[g],
+                legendX + (g / rows) * geneColumnWidth, geneTop - lineHeight * (1 + g % rows));
         }
         font.setColor(Color.WHITE);
     }
@@ -129,8 +137,13 @@ public class GraphRenderer {
     private float legendEntry(String text, Color color, float x, float y) {
         shapes.filledRectangle(x, y - font.getCapHeight(), 12f, font.getCapHeight(), color);
         font.setColor(color);
-        font.draw(batch, text, x + 18f, y);
+        font.draw(batch, text, x + SWATCH_SPACE, y);
         return y - font.getLineHeight();
+    }
+
+    private float textWidth(String text) {
+        layout.setText(font, text);
+        return layout.width;
     }
 
     private static float last(FloatArray series) {

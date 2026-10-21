@@ -28,6 +28,8 @@ public class SpatialGrid {
     private final int[] cellHead;      // First entity index in each cell, or -1
     private int[] nextInCell = new int[0];
     private Entity[] entities = new Entity[0];
+    private float[] xs = new float[0]; // Positions when the grid was built, so queries can filter by distance
+    private float[] ys = new float[0];
 
     public SpatialGrid(float cellSize, float worldWidth, float worldHeight) {
         this.cellSize = cellSize;
@@ -38,31 +40,48 @@ public class SpatialGrid {
     }
 
     public void rebuild(ImmutableArray<Entity> source) {
-        int count = source.size();
-        if (entities.length < count) {
-            entities = new Entity[count * 2];
-            nextInCell = new int[count * 2];
-        }
-        Arrays.fill(entities, null);
-        Arrays.fill(cellHead, -1);
-
-        for (int i = 0; i < count; i++) {
-            Entity entity = source.get(i);
-            Vector2 position = Mappers.position.get(entity).position;
-            int cell = cellIndex(columnOf(position.x), rowOf(position.y));
-            entities[i] = entity;
-            nextInCell[i] = cellHead[cell];
-            cellHead[cell] = i;
+        clear(source.size());
+        for (int i = 0; i < source.size(); i++) {
+            insert(i, source.get(i));
         }
     }
 
+    public void rebuild(Array<Entity> source) {
+        clear(source.size);
+        for (int i = 0; i < source.size; i++) {
+            insert(i, source.get(i));
+        }
+    }
+
+    private void clear(int count) {
+        if (entities.length < count) {
+            entities = new Entity[count * 2];
+            nextInCell = new int[count * 2];
+            xs = new float[count * 2];
+            ys = new float[count * 2];
+        }
+        Arrays.fill(entities, null);
+        Arrays.fill(cellHead, -1);
+    }
+
+    private void insert(int i, Entity entity) {
+        Vector2 position = Mappers.position.get(entity).position;
+        int cell = cellIndex(columnOf(position.x), rowOf(position.y));
+        entities[i] = entity;
+        xs[i] = position.x;
+        ys[i] = position.y;
+        nextInCell[i] = cellHead[cell];
+        cellHead[cell] = i;
+    }
+
     /**
-     * Adds every entity in the cells overlapping the circle to {@code out} (cleared first).
-     * Results are candidates only: callers still check the exact distance.
+     * Adds every entity that was within the circle when the grid was built (plus a margin for movement
+     * since) to {@code out}, which is cleared first. Callers still check the exact distance.
      */
     public void query(float x, float y, float radius, Array<Entity> out) {
         out.clear();
         float reach = radius + STALE_MARGIN;
+        float reachSquared = reach * reach;
         int minColumn = columnOf(x - reach);
         int maxColumn = columnOf(x + reach);
         int minRow = rowOf(y - reach);
@@ -70,7 +89,11 @@ public class SpatialGrid {
         for (int row = minRow; row <= maxRow; row++) {
             for (int column = minColumn; column <= maxColumn; column++) {
                 for (int i = cellHead[cellIndex(column, row)]; i != -1; i = nextInCell[i]) {
-                    out.add(entities[i]);
+                    float dx = xs[i] - x;
+                    float dy = ys[i] - y;
+                    if (dx * dx + dy * dy <= reachSquared) {
+                        out.add(entities[i]);
+                    }
                 }
             }
         }

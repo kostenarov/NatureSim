@@ -36,6 +36,7 @@ public abstract class SimTestSupport {
         a.add(new VisionComponent(200f, 120f));
         a.add(new BehaviourComponent());
         a.add(new ReproductionComponent());
+        a.add(new SpeciesComponent());
         if (predator) {
             PredatorComponent pc = new PredatorComponent();
             pc.attackDamage = 40f;

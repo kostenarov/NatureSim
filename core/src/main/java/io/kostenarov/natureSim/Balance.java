@@ -19,6 +19,14 @@ public final class Balance {
     public static final float MATING_MIN_THIRST = 40f;          // Must be at least this well watered to mate
     public static final float MATURITY_AGE = 30f;               // Seconds after birth before a creature can mate
 
+    // --- Evolution and species --------------------------------------------------------------------------
+    public static final float FOUNDER_SPREAD = 0.5f;            // Starting genes vary this much either side of average (1)
+    public static final float MAX_MATE_DISTANCE = 2f;           // Partners whose genes differ more than this can't breed
+    public static final float MATE_SIMILARITY_PREFERENCE = 0.5f; // How much females favour similar males over showy ones
+    public static final float SPECIES_RADIUS = 1.5f;            // Creatures this close to a species' average genes belong to it
+    public static final int MIN_NEW_SPECIES_SIZE = 8;           // A new species needs at least this many members to count
+    public static final float SPECIES_CHECK_SECONDS = 5f;       // How often species are worked out
+
     // --- Energy and rest --------------------------------------------------------------------------------
     // A creature that runs out of energy rests, whatever else it needs, until it has recovered this much.
     // Without the gap it would stagger: one step, out of energy, one step...
@@ -42,6 +50,7 @@ public final class Balance {
     public static final float HERD_COHESION = 0.4f;             // How strongly fleeing prey lean toward their herd
     public static final float ALARM_DECAY = 0.4f;               // Seconds of fear lost each time panic spreads to a neighbour
     public static final float MIN_ALARM = 0.5f;                 // Panic caught from a neighbour lasts at least this long
+    public static final float PREY_SCENT_SHARE = 0.2f;          // Prey smell predators at this share of a predator's scent range
 
     // --- Predators --------------------------------------------------------------------------------------
     public static final float ATTACK_RANGE = 30f;

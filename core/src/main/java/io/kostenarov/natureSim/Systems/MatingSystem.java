@@ -13,6 +13,7 @@ import io.kostenarov.natureSim.Creatures;
 import io.kostenarov.natureSim.Enums.Gender;
 import io.kostenarov.natureSim.Mappers;
 import io.kostenarov.natureSim.Balance;
+import io.kostenarov.natureSim.Traits;
 
 public class MatingSystem extends EntitySystem {
     private ImmutableArray<Entity> matingEntities;
@@ -22,20 +23,15 @@ public class MatingSystem extends EntitySystem {
     private static final float GENE_MIN = 0f;
     private static final float GENE_MAX = 2f;
 
-    private final float matingCooldown;   // Seconds between matings for one creature
-    private final float mutationRate;     // Chance to mutate each gene
-    private final float mutationAmount;   // Max amount to mutate by
-    private final float predatorBreedingSlowdown; // Predators wait this many times longer between matings
+    // Cooldown, mutation and predator slowdown settings, read live so they can change mid-run
+    private final SimulationConfig config;
 
     public MatingSystem() {
         this(new SimulationConfig());
     }
 
     public MatingSystem(SimulationConfig config) {
-        this.matingCooldown = config.matingCooldown;
-        this.mutationRate = config.mutationRate;
-        this.mutationAmount = config.mutationAmount;
-        this.predatorBreedingSlowdown = config.predatorBreedingSlowdown;
+        this.config = config;
     }
 
     @Override
@@ -60,30 +56,36 @@ public class MatingSystem extends EntitySystem {
 
         SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
 
+        // Females choose: each ready female mates with the most attractive ready male close enough
         for (int i = 0; i < matingEntities.size(); i++) {
-            Entity entity1 = matingEntities.get(i);
-            if (!isReadyToMate(entity1)) {
+            Entity female = matingEntities.get(i);
+            if (Mappers.gender.get(female).gender != Gender.FEMALE || !isReadyToMate(female)) {
                 continue;
             }
 
-            PositionComponent pos1 = Mappers.position.get(entity1);
+            PositionComponent femalePos = Mappers.position.get(female);
             Iterable<Entity> candidates = matingEntities;
             if (index != null) {
                 // Only creatures within mating distance can be partners.
-                index.creatures().query(pos1.position.x, pos1.position.y, Balance.MATING_DISTANCE, nearby);
+                index.creatures().query(femalePos.position.x, femalePos.position.y, Balance.MATING_DISTANCE, nearby);
                 candidates = nearby;
             }
 
-            for (Entity entity2 : candidates) {
-                if (!arePartners(entity1, entity2) || !isReadyToMate(entity2)) {
+            Entity chosen = null;
+            float bestScore = -Float.MAX_VALUE;
+            for (Entity male : candidates) {
+                if (!arePartners(female, male) || !isReadyToMate(male)
+                    || femalePos.position.dst(Mappers.position.get(male).position) > Balance.MATING_DISTANCE) {
                     continue;
                 }
-                if (pos1.position.dst(Mappers.position.get(entity2).position) > Balance.MATING_DISTANCE) {
-                    continue;
+                float score = Traits.attractiveness(Mappers.genome.get(female), Mappers.genome.get(male));
+                if (score > bestScore) {
+                    bestScore = score;
+                    chosen = male;
                 }
-
-                mate(entity1, entity2);
-                break;
+            }
+            if (chosen != null) {
+                mate(female, chosen);
             }
         }
     }
@@ -100,7 +102,7 @@ public class MatingSystem extends EntitySystem {
         // The offspring is built from the parents' food reserves, so births are limited by food supply.
         stats1.hunger -= Balance.MATING_HUNGER_COST;
         stats2.hunger -= Balance.MATING_HUNGER_COST;
-        float cooldown = Creatures.isPredator(parent1) ? matingCooldown * predatorBreedingSlowdown : matingCooldown;
+        float cooldown = Creatures.isPredator(parent1) ? config.matingCooldown * config.predatorBreedingSlowdown : config.matingCooldown;
         repro1.matingCooldown = cooldown;
         repro2.matingCooldown = cooldown;
 
@@ -117,8 +119,8 @@ public class MatingSystem extends EntitySystem {
         for (int i = 0; i < offspringDna.genes.length; i++) {
             float gene = MathUtils.randomBoolean() ? parent1Dna.genes[i] : parent2Dna.genes[i];
 
-            if (MathUtils.random() < mutationRate) {
-                gene += (float) MathUtils.random.nextGaussian() * mutationAmount;
+            if (MathUtils.random() < config.mutationRate) {
+                gene += (float) MathUtils.random.nextGaussian() * config.mutationAmount;
                 gene = MathUtils.clamp(gene, GENE_MIN, GENE_MAX);
             }
 
@@ -145,8 +147,11 @@ public class MatingSystem extends EntitySystem {
         int parentGeneration = Math.max(parent1Age != null ? parent1Age.generation : 0, parent2Age != null ? parent2Age.generation : 0);
         Mappers.age.get(offspring).generation = parentGeneration + 1;
 
-        // Offspring take their parents' role
+        // Offspring take their parents' role, and their mother's species until SpeciesSystem next looks
         Creatures.copyRole(parent1, offspring);
+        if (Mappers.species.has(parent1) && Mappers.species.has(offspring)) {
+            Mappers.species.get(offspring).id = Mappers.species.get(parent1).id;
+        }
 
         LineageSystem lineage = engine.getSystem(LineageSystem.class);
         if (lineage != null) {
@@ -176,7 +181,10 @@ public class MatingSystem extends EntitySystem {
             && stats.thirst >= Balance.MATING_MIN_THIRST;
     }
 
-    /** Two different creatures of opposite sex and the same role (prey with prey, predators with predators, ...). */
+    /**
+     * Two different creatures of opposite sex and the same role (prey with prey, predators with predators, ...)
+     * whose genes are close enough to breed (see {@link Traits#canInterbreed}).
+     */
     public static boolean arePartners(Entity a, Entity b) {
         if (a == b) {
             return false;
@@ -184,7 +192,8 @@ public class MatingSystem extends EntitySystem {
         GenderComponent genderA = Mappers.gender.get(a);
         GenderComponent genderB = Mappers.gender.get(b);
         return genderA != null && genderB != null && genderA.gender != genderB.gender
-            && Creatures.role(a) == Creatures.role(b);
+            && Creatures.role(a) == Creatures.role(b)
+            && Traits.canInterbreed(Mappers.genome.get(a), Mappers.genome.get(b));
     }
 }
 

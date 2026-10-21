@@ -26,7 +26,7 @@ public class PredatorSystem extends CreatureSystem {
 
     private ImmutableArray<Entity> preyEntities;
 
-    private final float eatingSeconds; // Time spent eating each kill (caps how fast one predator can kill)
+    private final SimulationConfig config; // Eating time (caps how fast one predator can kill), read live
 
     public PredatorSystem() {
         this(new SimulationConfig());
@@ -34,7 +34,7 @@ public class PredatorSystem extends CreatureSystem {
 
     public PredatorSystem(SimulationConfig config) {
         super(Creatures.PREDATORS);
-        this.eatingSeconds = config.predatorEatingSeconds;
+        this.config = config;
     }
 
     @Override
@@ -199,7 +199,7 @@ public class PredatorSystem extends CreatureSystem {
             predatorStats.energy = Math.min(100f, predatorStats.energy + predatorData.killEnergyGain);
             predatorStats.hunger = Math.min(100f, predatorStats.hunger + predatorData.killEnergyGain);
             clearScentTarget(predatorData);
-            predatorData.eatingTimer = eatingSeconds;
+            predatorData.eatingTimer = config.predatorEatingSeconds;
             CarcassSystem.leaveCarcass(getEngine(), prey, Balance.KILL_CARCASS_FOOD); // Leftovers for scavengers
             getEngine().removeEntity(prey);
         }

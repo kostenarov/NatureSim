@@ -5,11 +5,11 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Array;
 import io.kostenarov.natureSim.Balance;
 import io.kostenarov.natureSim.Components.*;
 import io.kostenarov.natureSim.Creatures;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
-import io.kostenarov.natureSim.Enums.Role;
 import io.kostenarov.natureSim.Mappers;
 import io.kostenarov.natureSim.SimulationConfig;
 import io.kostenarov.natureSim.Traits;
@@ -21,8 +21,12 @@ import io.kostenarov.natureSim.World;
  */
 public class PreySystem extends CreatureSystem {
 
-    private final boolean herding;
+    private final SimulationConfig config; // Herding can be switched on and off mid-run
     private final Vector2 herdPull = new Vector2();
+    // Prey that were frightened at the start of this step. Panic only spreads from them, so most prey have
+    // no one to check; looking through every neighbour of every prey each step was most of the step's cost.
+    private final Array<Entity> frightened = new Array<>(false, 64);
+    private final SpatialGrid frightenedGrid = new SpatialGrid(Balance.HERD_RADIUS, World.WIDTH, World.HEIGHT);
     private ImmutableArray<Entity> foodEntities;
     private ImmutableArray<Entity> predatorEntities;
 
@@ -32,7 +36,7 @@ public class PreySystem extends CreatureSystem {
 
     public PreySystem(SimulationConfig config) {
         super(Creatures.PREY);
-        this.herding = config.herdingEnabled;
+        this.config = config;
     }
 
     @Override
@@ -40,6 +44,20 @@ public class PreySystem extends CreatureSystem {
         super.addedToEngine(engine);
         foodEntities = engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get());
         predatorEntities = engine.getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get());
+    }
+
+    @Override
+    public void update(float deltaTime) {
+        if (config.herdingEnabled) {
+            frightened.clear();
+            for (Entity prey : getEntities()) {
+                if (Mappers.behaviour.get(prey).fleeTimer > 0f) {
+                    frightened.add(prey);
+                }
+            }
+            frightenedGrid.rebuild(frightened);
+        }
+        super.update(deltaTime);
     }
 
     @Override
@@ -117,7 +135,7 @@ public class PreySystem extends CreatureSystem {
         } else {
             moveToward(entity, foodPos.position, Traits.speed(Mappers.genome.get(entity)), deltaTime);
             BehaviourComponent behaviour = Mappers.behaviour.get(entity);
-            if (isMakingNoProgress(behaviour, pos.position, deltaTime)) {
+            if (Navigation.isMakingNoProgress(behaviour, pos.position, deltaTime)) {
                 // Others are crowding this food: leave it to them for a while and look for another
                 behaviour.ignoredFood = food;
                 behaviour.ignoreFoodTimer = Balance.IGNORE_BLOCKED_FOOD_SECONDS;
@@ -131,7 +149,6 @@ public class PreySystem extends CreatureSystem {
         VisionComponent vision = Mappers.vision.get(entity);
 
         Iterable<Entity> candidates = foodEntities;
-        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
         if (index != null) {
             index.food().query(pos.position.x, pos.position.y, sightRange(vision), nearby);
             candidates = nearby;
@@ -168,7 +185,7 @@ public class PreySystem extends CreatureSystem {
     }
 
     /**
-     * Works out the escape direction into {@code tmp}: away from every visible predator (closer ones count
+     * Works out the escape direction into {@code tmp}: away from every predator it can see or smell (closer ones count
      * more) and along nearby map edges, so prey don't get pinned against a wall. A prey that has just lost
      * sight of a predator keeps running from where it last saw it; otherwise turning away to flee would hide
      * the predator, the prey would turn back, see it again, and twitch on the spot.
@@ -182,14 +199,17 @@ public class PreySystem extends CreatureSystem {
         float awayX = 0f;
         float awayY = 0f;
         float nearestDistanceSquared = Float.MAX_VALUE;
+        float smell = Traits.preySmellRange(Mappers.genome.get(prey));
+        float maxRange = Math.max(sightRange(vision) * Traits.MAX_VISIBILITY, smell);
         for (Entity predator : predatorEntities) {
-            if (!canSee(preyPos, vision, predator)) {
-                continue;
-            }
             PositionComponent predatorPos = Mappers.position.get(predator);
             float dx = preyPos.position.x - predatorPos.position.x;
             float dy = preyPos.position.y - predatorPos.position.y;
             float distanceSquared = Math.max(1f, dx * dx + dy * dy);
+            // Cheap distance check first: most predators are far away. Close ones are smelled, even unseen.
+            if (distanceSquared > maxRange * maxRange || (distanceSquared > smell * smell && !canSee(preyPos, vision, predator))) {
+                continue;
+            }
             // Unit vector away from the predator, weighted by 1/distance
             awayX += dx / distanceSquared;
             awayY += dy / distanceSquared;
@@ -201,14 +221,14 @@ public class PreySystem extends CreatureSystem {
 
         if (nearestDistanceSquared < Float.MAX_VALUE) {
             behaviour.fleeTimer = Balance.FLEE_MEMORY;
-        } else if (behaviour.fleeTimer > 0f || (herding && catchAlarm(prey, behaviour))) {
+        } else if (behaviour.fleeTimer > 0f || (config.herdingEnabled && catchAlarm(prey, behaviour))) {
             awayX = preyPos.position.x - behaviour.lastThreat.x; // Out of sight, but not forgotten
             awayY = preyPos.position.y - behaviour.lastThreat.y;
         } else {
             return false;
         }
 
-        if (herding) {
+        if (config.herdingEnabled) {
             // Run with the herd: lean toward other fleeing prey nearby, so the group sticks together
             float length = (float) Math.sqrt(awayX * awayX + awayY * awayY);
             if (length > 0f && herdCenter(prey, preyPos)) {
@@ -251,19 +271,14 @@ public class PreySystem extends CreatureSystem {
 
     // --- Herding ----------------------------------------------------------------------------------------
 
-    /** Nearby prey (within herding range), from the spatial grid when available. */
-    private Iterable<Entity> nearbyPrey(PositionComponent pos) {
-        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
-        if (index == null) {
-            return getEntities();
-        }
-        index.creatures().query(pos.position.x, pos.position.y, Balance.HERD_RADIUS, nearby);
+    /** Candidates for frightened prey within herding range (as of the start of this step). */
+    private Iterable<Entity> nearbyFrightenedPrey(PositionComponent pos) {
+        frightenedGrid.query(pos.position.x, pos.position.y, Balance.HERD_RADIUS, nearby);
         return nearby;
     }
 
-    private boolean isNearbyPrey(Entity self, Entity other, PositionComponent pos) {
-        return other != self && Creatures.role(other) == Role.PREY
-            && Mappers.position.get(other).position.dst2(pos.position) <= Balance.HERD_RADIUS * Balance.HERD_RADIUS;
+    private static boolean isNearbyPrey(Entity self, Entity other, PositionComponent pos) {
+        return other != self && Mappers.position.get(other).position.dst2(pos.position) <= Balance.HERD_RADIUS * Balance.HERD_RADIUS;
     }
 
     /**
@@ -273,7 +288,7 @@ public class PreySystem extends CreatureSystem {
     private boolean catchAlarm(Entity prey, BehaviourComponent behaviour) {
         PositionComponent pos = Mappers.position.get(prey);
         BehaviourComponent freshest = null;
-        for (Entity other : nearbyPrey(pos)) {
+        for (Entity other : nearbyFrightenedPrey(pos)) {
             if (!isNearbyPrey(prey, other, pos)) {
                 continue;
             }
@@ -297,7 +312,7 @@ public class PreySystem extends CreatureSystem {
         float sumX = 0f;
         float sumY = 0f;
         int count = 0;
-        for (Entity other : nearbyPrey(pos)) {
+        for (Entity other : nearbyFrightenedPrey(pos)) {
             if (isNearbyPrey(prey, other, pos) && Mappers.behaviour.get(other).fleeTimer > 0f) {
                 Vector2 otherPos = Mappers.position.get(other).position;
                 sumX += otherPos.x;

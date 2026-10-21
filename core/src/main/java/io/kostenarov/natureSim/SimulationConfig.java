@@ -1,6 +1,7 @@
 package io.kostenarov.natureSim;
 
 import com.badlogic.gdx.Preferences;
+import com.badlogic.gdx.utils.Json;
 
 /**
  * Tunable settings for one simulation run. Edited on the start screen, saved between launches, and read by
@@ -71,6 +72,12 @@ public class SimulationConfig {
         collisionEnabled = true;
         showVisionCones = true;
         showScentRanges = true;
+    }
+
+    /** An independent copy, so a running world's settings can change without touching the start screen's. */
+    public SimulationConfig copy() {
+        Json json = new Json();
+        return json.fromJson(SimulationConfig.class, json.toJson(this));
     }
 
     /** Loads saved settings; anything missing keeps its default. */

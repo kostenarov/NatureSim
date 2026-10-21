@@ -5,6 +5,8 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.EntitySystem;
 import com.badlogic.ashley.core.Family;
 import com.badlogic.ashley.utils.ImmutableArray;
+import com.badlogic.gdx.utils.Array;
+import io.kostenarov.natureSim.Mappers;
 import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
@@ -21,6 +23,8 @@ public class SpatialIndexSystem extends EntitySystem {
 
     private final SpatialGrid creatures = new SpatialGrid(CREATURE_CELL_SIZE, World.WIDTH, World.HEIGHT);
     private final SpatialGrid food = new SpatialGrid(FOOD_CELL_SIZE, World.WIDTH, World.HEIGHT);
+    private final SpatialGrid standing = new SpatialGrid(CREATURE_CELL_SIZE, World.WIDTH, World.HEIGHT);
+    private final Array<Entity> standingList = new Array<>(false, 256);
     private ImmutableArray<Entity> creatureEntities;
     private ImmutableArray<Entity> foodEntities;
 
@@ -39,11 +43,26 @@ public class SpatialIndexSystem extends EntitySystem {
     public void update(float deltaTime) {
         creatures.rebuild(creatureEntities);
         food.rebuild(foodEntities);
+        standingList.clear();
+        for (Entity creature : creatureEntities) {
+            if (Mappers.velocity.has(creature) && Mappers.velocity.get(creature).velocity.isZero()) {
+                standingList.add(creature);
+            }
+        }
+        standing.rebuild(standingList);
     }
 
     /** All creatures (prey and predators). */
     public SpatialGrid creatures() {
         return creatures;
+    }
+
+    /**
+     * Creatures that were standing still (resting, eating, drinking) at the start of the step. Walkers only
+     * steer around these, so they needn't look through every creature in a crowd.
+     */
+    public SpatialGrid standingCreatures() {
+        return standing;
     }
 
     public SpatialGrid food() {

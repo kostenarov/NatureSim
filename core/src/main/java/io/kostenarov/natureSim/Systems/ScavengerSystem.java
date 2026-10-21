@@ -88,7 +88,7 @@ public class ScavengerSystem extends CreatureSystem {
             Vector2 carcassPos = Mappers.position.get(carcass).position;
             if (pos.dst(carcassPos) < Balance.FOOD_CONSUMPTION_DISTANCE) {
                 stop(scavenger);
-                eat(Mappers.stats.get(scavenger), Mappers.carcass.get(carcass), deltaTime);
+                eat(Mappers.stats.get(scavenger), Mappers.genome.get(scavenger), Mappers.carcass.get(carcass), deltaTime);
             } else {
                 moveToward(scavenger, carcassPos, speed, deltaTime);
             }
@@ -110,8 +110,8 @@ public class ScavengerSystem extends CreatureSystem {
         roamNearWater(scavenger, deltaTime);
     }
 
-    private static void eat(StatsComponent stats, CarcassComponent carcass, float deltaTime) {
-        float bite = Math.min(Balance.SCAVENGER_BITE_RATE * deltaTime, Math.min(carcass.food, 100f - stats.hunger));
+    private static void eat(StatsComponent stats, GenomeComponent dna, CarcassComponent carcass, float deltaTime) {
+        float bite = Math.min(Traits.scavengerBiteRate(dna) * deltaTime, Math.min(carcass.food, 100f - stats.hunger));
         stats.hunger += bite;
         carcass.food -= bite; // CarcassSystem removes it once it's gone
     }

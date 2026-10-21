@@ -20,6 +20,7 @@ import io.kostenarov.natureSim.Systems.PredatorSystem;
 import io.kostenarov.natureSim.Systems.PreySystem;
 import io.kostenarov.natureSim.Systems.ScavengerSystem;
 import io.kostenarov.natureSim.Systems.SpatialIndexSystem;
+import io.kostenarov.natureSim.Systems.SpeciesSystem;
 import io.kostenarov.natureSim.Systems.WaterBarrierSystem;
 import io.kostenarov.natureSim.Systems.WaterSourceSystem;
 
@@ -56,6 +57,7 @@ public final class Simulation {
         if (config.migrationEnabled) {
             engine.addSystem(new MigrationSystem(config));
         }
+        engine.addSystem(new SpeciesSystem());
         engine.addSystem(new PopulationHistory());
         return engine;
     }
@@ -78,10 +80,14 @@ public final class Simulation {
 
     /**
      * Adds a first-generation creature of the given role. Speed and vision start close to the original
-     * hand-tuned creatures for that role; every other gene is random (0 to 2) and evolution takes it from there.
+     * hand-tuned creatures for that role; every other gene starts near average (1, give or take
+     * {@link Balance#FOUNDER_SPREAD}), so each role starts as one species that evolution can then pull apart.
      */
     public static Entity spawn(Engine engine, Role role, float x, float y, float age) {
         GenomeComponent dna = new GenomeComponent();
+        for (int g = 0; g < dna.genes.length; g++) {
+            dna.genes[g] = 1f + MathUtils.random(-Balance.FOUNDER_SPREAD, Balance.FOUNDER_SPREAD);
+        }
         switch (role) {
             case PREDATOR:
                 dna.genes[GenomeComponent.SPEED] = MathUtils.random(0.7f, 0.85f);  // ~190-220 px/s

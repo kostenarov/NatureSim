@@ -15,11 +15,12 @@ public class ClockSystem extends EntitySystem {
     private static final int RUN_FIRST = Integer.MIN_VALUE + 1; // Just after the spatial index
     private static final float START_OF_DAY = 0.3f;             // Runs begin in the morning
 
-    private final boolean dayNight;
-    private final boolean seasons;
-    private final float dayLength;   // Seconds
-    private final float yearLength;  // Seconds
+    private final SimulationConfig config; // Read live: day and year settings can change mid-run
     private float time = 0f;
+    // Days and years passed so far. Kept as running totals rather than time / length, so that changing the
+    // length of a day or year mid-run changes how fast time passes from then on instead of jumping.
+    private float days = START_OF_DAY;
+    private float years = 0f;
 
     public ClockSystem() {
         this(new SimulationConfig());
@@ -27,15 +28,14 @@ public class ClockSystem extends EntitySystem {
 
     public ClockSystem(SimulationConfig config) {
         super(RUN_FIRST);
-        this.dayNight = config.dayNightEnabled;
-        this.seasons = config.seasonsEnabled;
-        this.dayLength = Math.max(1f, config.dayLengthMinutes * 60f);
-        this.yearLength = Math.max(1f, config.yearLengthMinutes * 60f);
+        this.config = config;
     }
 
     @Override
     public void update(float deltaTime) {
         time += deltaTime;
+        days += deltaTime / Math.max(1f, config.dayLengthMinutes * 60f);
+        years += deltaTime / Math.max(1f, config.yearLengthMinutes * 60f);
     }
 
     /** Simulated seconds since the start. */
@@ -43,14 +43,31 @@ public class ClockSystem extends EntitySystem {
         return time;
     }
 
+    /** Days passed, counting from midnight before the run began (the run starts in the morning). */
+    public float getDays() {
+        return days;
+    }
+
+    /** Years passed since the run began. */
+    public float getYears() {
+        return years;
+    }
+
+    /** Puts the clock back to a saved time (see WorldSave). */
+    public void restore(float time, float days, float years) {
+        this.time = time;
+        this.days = days;
+        this.years = years;
+    }
+
     /** 0 at midnight, 0.5 at noon, continuing to 1 at the next midnight. */
     public float dayPhase() {
-        return ((time / dayLength) + START_OF_DAY) % 1f;
+        return days % 1f;
     }
 
     /** How light it is: 1 at noon, 0 at midnight (always 1 with day/night switched off). */
     public float daylight() {
-        if (!dayNight) {
+        if (!config.dayNightEnabled) {
             return 1f;
         }
         return 0.5f - 0.5f * MathUtils.cos(MathUtils.PI2 * dayPhase());
@@ -63,12 +80,12 @@ public class ClockSystem extends EntitySystem {
 
     /** 0 at the start of spring (the run starts there), continuing to 1 a year later. */
     public float yearPhase() {
-        return (time / yearLength) % 1f;
+        return years % 1f;
     }
 
     /** Food growth multiplier: peaks at midsummer, bottoms out in deep winter (always 1 with seasons off). */
     public float growthFactor() {
-        if (!seasons) {
+        if (!config.seasonsEnabled) {
             return 1f;
         }
         float middle = (Balance.SUMMER_GROWTH + Balance.WINTER_GROWTH) / 2f;
@@ -82,16 +99,16 @@ public class ClockSystem extends EntitySystem {
     }
 
     public boolean isDayNightEnabled() {
-        return dayNight;
+        return config.dayNightEnabled;
     }
 
     public boolean isSeasonsEnabled() {
-        return seasons;
+        return config.seasonsEnabled;
     }
 
     /** e.g. "Day 3  14:20" */
     public String describeTime() {
-        int day = (int) ((time / dayLength) + START_OF_DAY) + 1;
+        int day = (int) days + 1;
         int minutesOfDay = (int) (dayPhase() * 24f * 60f);
         return String.format("Day %d  %02d:%02d", day, minutesOfDay / 60, minutesOfDay % 60);
     }

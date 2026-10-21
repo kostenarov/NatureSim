@@ -16,7 +16,7 @@ import io.kostenarov.natureSim.Mappers;
 public class AgingSystem extends IteratingSystem {
     private static final float LIFESPAN_VARIATION = 0.2f;
 
-    private final float baseLifespan; // Seconds
+    private final SimulationConfig config; // Read live: the lifespan setting can change mid-run
 
     public AgingSystem() {
         this(new SimulationConfig());
@@ -24,14 +24,14 @@ public class AgingSystem extends IteratingSystem {
 
     public AgingSystem(SimulationConfig config) {
         super(Family.all(AgeComponent.class, StatsComponent.class).get());
-        this.baseLifespan = config.lifespanMinutes * 60f;
+        this.config = config;
     }
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
         AgeComponent age = Mappers.age.get(entity);
         if (age.lifespan <= 0f) {
-            age.lifespan = baseLifespan * MathUtils.random(1f - LIFESPAN_VARIATION, 1f + LIFESPAN_VARIATION);
+            age.lifespan = config.lifespanMinutes * 60f * MathUtils.random(1f - LIFESPAN_VARIATION, 1f + LIFESPAN_VARIATION);
         }
 
         age.age += deltaTime;

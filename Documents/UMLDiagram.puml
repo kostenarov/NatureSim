@@ -8,7 +8,14 @@ package "Screens & drawing" {
   class Main
   class StartScreen
   class SimulationScreen {
-    fixed 60 Hz step, input, HUD
+    fixed 60 Hz step, input
+  }
+  class Hud {
+    status line, creature panel
+  }
+  class LiveSettingsWindow
+  class SettingsForm {
+    settings rows with tooltips
   }
   class WorldRenderer
   class GraphRenderer
@@ -33,6 +40,10 @@ package "Simulation setup & rules" {
   class Mappers
   class World
   class HistoryExporter
+  class WorldSave {
+    + save(engine, config, seed)
+    + load(json)
+  }
 }
 
 package "Systems (in run order)" {
@@ -43,8 +54,11 @@ package "Systems (in run order)" {
   class FoodSourceSystem
   class MatingSystem
   abstract class CreatureSystem {
-    movement, wandering, drinking,
-    sight, courtship, exhaustion
+    wandering, drinking, sight,
+    courtship, exhaustion
+  }
+  class Navigation {
+    swerving, deep water, getting unstuck
   }
   class PredatorSystem
   class PreySystem
@@ -56,6 +70,7 @@ package "Systems (in run order)" {
   class DeathSystem
   class CarcassSystem
   class MigrationSystem
+  class SpeciesSystem
   class PopulationHistory
   class SpatialGrid
 }
@@ -71,6 +86,7 @@ package "Components (data)" {
   class ReproductionComponent
   class AgeComponent
   class LineageComponent
+  class SpeciesComponent
   class PredatorComponent
   class ScavengerComponent
   class FoodSourceComponent
@@ -89,16 +105,25 @@ Main --> SimulationScreen
 StartScreen --> SimulationConfig
 SimulationScreen --> Simulation
 SimulationScreen --> WorldRenderer
-SimulationScreen --> GraphRenderer
-SimulationScreen --> Minimap
+SimulationScreen --> Hud
+SimulationScreen --> LiveSettingsWindow
 SimulationScreen --> CameraController
 SimulationScreen --> HistoryExporter
+SimulationScreen --> WorldSave
+Hud --> GraphRenderer
+Hud --> Minimap
+StartScreen ..> SettingsForm
+LiveSettingsWindow ..> SettingsForm
+WorldSave ..> Simulation
 Simulation --> SimulationConfig
 
 CreatureSystem <|-- PredatorSystem
 CreatureSystem <|-- PreySystem
 CreatureSystem <|-- ScavengerSystem
 SpatialIndexSystem --> SpatialGrid
+CreatureSystem --> Navigation
+SpeciesSystem ..> SpeciesComponent
+MatingSystem ..> Traits
 CreatureSystem ..> Traits
 MetabolismSystem ..> Traits
 MatingSystem ..> Creatures

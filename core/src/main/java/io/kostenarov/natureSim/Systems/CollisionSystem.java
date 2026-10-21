@@ -60,7 +60,9 @@ public class CollisionSystem extends EntitySystem {
         }
 
         for (int pass = 0; pass < SOLVER_PASSES; pass++) {
-            resolveOverlaps(count);
+            if (!resolveOverlaps(count)) {
+                break; // Nothing overlaps any more
+            }
         }
 
         for (int i = 0; i < count; i++) {
@@ -68,7 +70,8 @@ public class CollisionSystem extends EntitySystem {
         }
     }
 
-    private void resolveOverlaps(int count) {
+    /** One pass over every pair of neighbours. Returns false if no two creatures overlapped. */
+    private boolean resolveOverlaps(int count) {
         // Bucket every creature into its grid cell.
         Arrays.fill(cellHead, -1);
         for (int i = 0; i < count; i++) {
@@ -79,6 +82,7 @@ public class CollisionSystem extends EntitySystem {
         }
 
         // Compare each creature against the creatures in its own and the 8 neighbouring cells.
+        boolean separatedAny = false;
         for (int i = 0; i < count; i++) {
             int column = columnOf(positions[i].x);
             int row = rowOf(positions[i].y);
@@ -91,8 +95,8 @@ public class CollisionSystem extends EntitySystem {
                         continue;
                     }
                     for (int j = cellHead[cellIndex(neighbourColumn, neighbourRow)]; j != -1; j = nextInCell[j]) {
-                        if (j > i) {
-                            separate(i, j);
+                        if (j > i && separate(i, j)) {
+                            separatedAny = true;
                         }
                     }
                 }
@@ -102,16 +106,18 @@ public class CollisionSystem extends EntitySystem {
         for (int i = 0; i < count; i++) {
             clampToMap(positions[i]);
         }
+        return separatedAny;
     }
 
-    private void separate(int i, int j) {
+    /** Pushes two overlapping creatures apart. Returns false if they don't overlap. */
+    private boolean separate(int i, int j) {
         Vector2 a = positions[i];
         Vector2 b = positions[j];
         float dx = b.x - a.x;
         float dy = b.y - a.y;
         float distanceSquared = dx * dx + dy * dy;
         if (distanceSquared >= MIN_DISTANCE * MIN_DISTANCE) {
-            return;
+            return false;
         }
 
         float distance = (float) Math.sqrt(distanceSquared);
@@ -136,6 +142,7 @@ public class CollisionSystem extends EntitySystem {
         }
         a.sub(normalX * overlap * shareA, normalY * overlap * shareA);
         b.add(normalX * overlap * (1f - shareA), normalY * overlap * (1f - shareA));
+        return true;
     }
 
     private void clampToMap(Vector2 position) {

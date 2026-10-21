@@ -72,6 +72,17 @@ public class MigrationSystem extends EntitySystem {
         return migrants;
     }
 
+    /** Seconds since the last check for near-extinct species. */
+    public float getTimer() {
+        return timer;
+    }
+
+    /** Puts the migration state back to a saved one (see WorldSave). */
+    public void restore(float timer, int migrants) {
+        this.timer = timer;
+        this.migrants = migrants;
+    }
+
     /** A group arrives together at a random point along the map edge, half male and half female. */
     private void arrive(Role role, int count) {
         float x;

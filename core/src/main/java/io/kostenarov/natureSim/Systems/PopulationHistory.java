@@ -17,7 +17,7 @@ import io.kostenarov.natureSim.Mappers;
 public class PopulationHistory extends EntitySystem {
     public static final int GENE_COUNT = new GenomeComponent().genes.length;
     public static final String[] GENE_NAMES = {
-        "Speed", "Vision", "Size", "Metabolism", "Recovery", "Hunger sense", "Thirst sense", "Scent", "Stealth"
+        "Speed", "Vision", "Size", "Metabolism", "Recovery", "Hunger sense", "Thirst sense", "Scent", "Stealth", "Ornament"
     };
     private static final int MAX_SAMPLES = 400;
     private static final float START_INTERVAL = 2f; // Seconds between samples at first
@@ -86,6 +86,18 @@ public class PopulationHistory extends EntitySystem {
 
     public int sampleCount() {
         return prey.size;
+    }
+
+    /** {elapsed, sampleInterval, timer}, for saving a world. */
+    public float[] getTiming() {
+        return new float[] {elapsed, sampleInterval, timer};
+    }
+
+    /** Puts the sampling clock back to a saved state (the series themselves are public). */
+    public void restoreTiming(float elapsed, float sampleInterval, float timer) {
+        this.elapsed = elapsed;
+        this.sampleInterval = sampleInterval;
+        this.timer = timer;
     }
 
     private void recordGeneMeans(ImmutableArray<Entity> creatures, FloatArray[] series) {

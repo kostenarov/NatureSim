@@ -16,6 +16,7 @@ import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
+import io.kostenarov.natureSim.Enums.Gender;
 import io.kostenarov.natureSim.Traits;
 import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Mappers;
@@ -28,17 +29,16 @@ import io.kostenarov.natureSim.Balance;
  * Hunger, thirst and energy upkeep is handled separately by {@link MetabolismSystem}.
  */
 public abstract class CreatureSystem extends IteratingSystem {
-    // A creature that runs out of energy collapses and rests, whatever else it needs, until it has
 
     protected final Vector2 tmp = new Vector2(); // Scratch vector, avoids allocating every frame
-    private final Vector2 heading = new Vector2();
     private final PositionComponent scratchPosition = new PositionComponent();
     protected final Array<Entity> nearby = new Array<>(false, 64); // Scratch list for grid queries
-    private final Array<Entity> obstacles = new Array<>(false, 16); // Separate list: avoidance runs mid-movement
+    private Navigation navigation;
     private final Vector2 waterTarget = new Vector2();
     private ImmutableArray<Entity> waterEntities;
     private ImmutableArray<Entity> allCreatures;
     private float lightLevel = 1f; // Share of normal sight range available this step
+    protected SpatialIndexSystem index; // Null if the engine has no spatial index (some tests)
 
     protected CreatureSystem(Family family) {
         super(family);
@@ -49,6 +49,8 @@ public abstract class CreatureSystem extends IteratingSystem {
         // Sight depends on daylight; smell doesn't (see ClockSystem)
         ClockSystem clock = getEngine().getSystem(ClockSystem.class);
         lightLevel = clock != null ? clock.visionScale() : 1f;
+        index = getEngine().getSystem(SpatialIndexSystem.class);
+        navigation.setIndex(index);
         super.update(deltaTime);
     }
 
@@ -56,6 +58,7 @@ public abstract class CreatureSystem extends IteratingSystem {
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
         waterEntities = engine.getEntitiesFor(WaterSourceSystem.WATER_FAMILY);
+        navigation = new Navigation(waterEntities);
         allCreatures = engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get());
     }
 
@@ -150,29 +153,12 @@ public abstract class CreatureSystem extends IteratingSystem {
         }
 
         boolean hitBoundary = moveToward(entity, behaviour.targetPoint, Traits.speed(dna), deltaTime);
-        if (hitBoundary || isMakingNoProgress(behaviour, pos.position, deltaTime)) {
+        if (hitBoundary || Navigation.isMakingNoProgress(behaviour, pos.position, deltaTime)) {
             // Blocked by the map edge, a crowd or the water: forget this target and try another way
             vel.velocity.setZero();
             faceRandomDirection(behaviour, vision);
             pickTargetPointInVisibleArea(entity);
         }
-    }
-
-    /**
-     * True once a creature trying to reach a target has barely moved for {@link Balance#STUCK_SECONDS}.
-     */
-    protected static boolean isMakingNoProgress(BehaviourComponent behaviour, Vector2 position, float deltaTime) {
-        if (position.dst2(behaviour.progressAnchor) > Balance.STUCK_DISTANCE * Balance.STUCK_DISTANCE) {
-            behaviour.progressAnchor.set(position);
-            behaviour.progressTimer = 0f;
-            return false;
-        }
-        behaviour.progressTimer += deltaTime;
-        if (behaviour.progressTimer >= Balance.STUCK_SECONDS) {
-            behaviour.progressTimer = 0f;
-            return true;
-        }
-        return false;
     }
 
     private void startLookingAround(BehaviourComponent behaviour, VelocityComponent vel) {
@@ -272,8 +258,10 @@ public abstract class CreatureSystem extends IteratingSystem {
     // --- Courtship -------------------------------------------------------------------------------------
 
     /**
-     * The nearest partner this creature can detect that is ready to mate, or null if it isn't ready itself
-     * or no one suitable is around. The actual mating happens in MatingSystem once they are close.
+     * The partner this creature heads for among those it can detect that are ready to mate, or null if it
+     * isn't ready itself or no one suitable is around. Males go for the nearest female; females go for the
+     * male they like best (see {@link Traits#attractiveness}), unless he's much further away than the rest.
+     * The actual mating happens in MatingSystem once they are close.
      */
     protected Entity findVisiblePartner(Entity entity) {
         if (!MatingSystem.isReadyToMate(entity)) {
@@ -283,26 +271,29 @@ public abstract class CreatureSystem extends IteratingSystem {
         float range = partnerSearchRange(entity);
 
         Iterable<Entity> candidates = allCreatures;
-        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
         if (index != null) {
             index.creatures().query(pos.position.x, pos.position.y, range, nearby);
             candidates = nearby;
         }
 
-        Entity nearest = null;
-        float nearestDistance = Float.MAX_VALUE;
+        boolean choosy = Mappers.gender.get(entity).gender == Gender.FEMALE;
+        GenomeComponent dna = Mappers.genome.get(entity);
+        Entity best = null;
+        float bestScore = -Float.MAX_VALUE;
         for (Entity candidate : candidates) {
             if (!MatingSystem.arePartners(entity, candidate) || !MatingSystem.isReadyToMate(candidate)
                 || !canDetectPartner(entity, candidate)) {
                 continue;
             }
             float distance = pos.position.dst(Mappers.position.get(candidate).position);
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearest = candidate;
+            // Closer is better for both; a female also weighs how much she likes him
+            float score = -distance / range + (choosy ? Traits.attractiveness(dna, Mappers.genome.get(candidate)) : 0f);
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
             }
         }
-        return nearest;
+        return best;
     }
 
     /** How far away a partner can be noticed. Prey rely on sight; predators override this to use smell. */
@@ -351,73 +342,7 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     /** Moves along a unit direction at the given speed. Returns true if the map edge stopped the creature. */
     protected boolean moveInDirection(Entity entity, float directionX, float directionY, float speed, float deltaTime) {
-        PositionComponent pos = Mappers.position.get(entity);
-        VelocityComponent vel = Mappers.velocity.get(entity);
-
-        heading.set(directionX, directionY);
-        // Swerve around creatures standing in the way (resting, eating, drinking) instead of walking into them
-        avoidStandingCreatures(entity, pos.position, heading);
-        // Deep water can't be crossed: slide along its edge, i.e. walk around the pond
-        WaterSourceSystem.slideAlongDeepWater(waterEntities, pos.position, heading, speed * deltaTime);
-        vel.velocity.set(heading.x * speed, heading.y * speed);
-        pos.position.mulAdd(vel.velocity, deltaTime);
-        WaterSourceSystem.pushOutOfDeepWater(waterEntities, pos.position);
-
-        boolean hitBoundary = clampToMap(pos);
-        if (!hitBoundary && !vel.velocity.isZero()) {
-            // Look where we're going.
-            Mappers.vision.get(entity).directionAngle =
-                (float) Math.toDegrees(Math.atan2(vel.velocity.y, vel.velocity.x));
-        }
-        return hitBoundary;
-    }
-
-    /**
-     * Bends a unit heading away from creatures that are standing still just ahead. Collisions won't push a
-     * standing creature aside (so it doesn't twitch), which means a walker has to go around it instead.
-     * Moving creatures aren't avoided: collisions sort those out, and a predator mustn't swerve around its prey.
-     */
-    private void avoidStandingCreatures(Entity self, Vector2 position, Vector2 heading) {
-        SpatialIndexSystem index = getEngine().getSystem(SpatialIndexSystem.class);
-        if (index == null) {
-            return;
-        }
-        index.creatures().query(position.x, position.y, Balance.AVOID_RANGE, obstacles);
-        float pushX = 0f;
-        float pushY = 0f;
-        for (Entity other : obstacles) {
-            if (other == self || !Mappers.velocity.get(other).velocity.isZero()) {
-                continue;
-            }
-            Vector2 otherPos = Mappers.position.get(other).position;
-            float dx = otherPos.x - position.x;
-            float dy = otherPos.y - position.y;
-            float distance = (float) Math.sqrt(dx * dx + dy * dy);
-            if (distance > Balance.AVOID_RANGE || distance < 0.01f) {
-                continue;
-            }
-            float ahead = (dx * heading.x + dy * heading.y) / distance; // 1 = dead ahead, 0 = beside
-            if (ahead <= 0.3f) {
-                continue;
-            }
-            // Steer toward whichever side it isn't on; closer and more directly ahead counts more
-            float side = heading.x * dy - heading.y * dx >= 0f ? -1f : 1f;
-            float weight = (1f - distance / Balance.AVOID_RANGE) * ahead;
-            pushX += -heading.y * side * weight;
-            pushY += heading.x * side * weight;
-        }
-        if (pushX != 0f || pushY != 0f) {
-            heading.add(pushX * Balance.AVOID_STRENGTH, pushY * Balance.AVOID_STRENGTH).nor();
-        }
-    }
-
-    private boolean clampToMap(PositionComponent pos) {
-        float maxX = World.WIDTH - World.CREATURE_SIZE;
-        float maxY = World.HEIGHT - World.CREATURE_SIZE;
-        boolean hitBoundary = pos.position.x < 0f || pos.position.x > maxX || pos.position.y < 0f || pos.position.y > maxY;
-        pos.position.x = MathUtils.clamp(pos.position.x, 0f, maxX);
-        pos.position.y = MathUtils.clamp(pos.position.y, 0f, maxY);
-        return hitBoundary;
+        return navigation.move(entity, directionX, directionY, speed, deltaTime);
     }
 
     // --- Perception -------------------------------------------------------------------------------------

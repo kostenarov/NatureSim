@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.utils.FloatArray;
+import io.kostenarov.natureSim.Enums.Role;
 import io.kostenarov.natureSim.Systems.PopulationHistory;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
@@ -26,6 +27,7 @@ public class GraphRenderer {
     };
     private static final Color PREY_COLOR = new Color(0.45f, 0.90f, 0.45f, 1f);
     private static final Color PREDATOR_COLOR = new Color(0.95f, 0.35f, 0.35f, 1f);
+    private static final Color SCAVENGER_COLOR = new Color(0.78f, 0.55f, 1f, 1f);
     private static final Color PANEL_COLOR = new Color(0.05f, 0.07f, 0.06f, 0.8f);
     private static final Color GRID_COLOR = new Color(1f, 1f, 1f, 0.12f);
     private static final float PADDING = 16f;
@@ -41,7 +43,7 @@ public class GraphRenderer {
     }
 
     /** Draws the panel with its bottom-left corner at (x, y). */
-    public void render(PopulationHistory history, boolean showPredatorGenes, float x, float y, float width, float height) {
+    public void render(PopulationHistory history, Role geneSpecies, float x, float y, float width, float height) {
         shapes.filledRectangle(x, y, width, height, PANEL_COLOR);
 
         float lineHeight = font.getLineHeight();
@@ -58,9 +60,11 @@ public class GraphRenderer {
         drawFrame(chartX, popBottom, chartWidth, popHeight);
         float preyMax = drawScaledLine(history.prey, chartX, popBottom, chartWidth, popHeight, PREY_COLOR);
         float predatorMax = drawScaledLine(history.predators, chartX, popBottom, chartWidth, popHeight, PREDATOR_COLOR);
+        float scavengerMax = drawScaledLine(history.scavengers, chartX, popBottom, chartWidth, popHeight, SCAVENGER_COLOR);
         float legendY = popTop - lineHeight;
         legendY = legendEntry("Prey " + (int) last(history.prey) + " (peak " + (int) preyMax + ")", PREY_COLOR, legendX, legendY);
         legendY = legendEntry("Predators " + (int) last(history.predators) + " (peak " + (int) predatorMax + ")", PREDATOR_COLOR, legendX, legendY);
+        legendY = legendEntry("Scavengers " + (int) last(history.scavengers) + " (peak " + (int) scavengerMax + ")", SCAVENGER_COLOR, legendX, legendY);
         font.setColor(Color.LIGHT_GRAY);
         font.draw(batch, "Generation " + (int) last(history.maxGeneration), legendX, legendY);
 
@@ -68,9 +72,24 @@ public class GraphRenderer {
         float geneTop = y + height / 2f - PADDING / 2f;
         float geneHeight = height / 2f - 2 * PADDING - lineHeight;
         float geneBottom = geneTop - lineHeight - geneHeight;
-        FloatArray[] means = showPredatorGenes ? history.predatorGeneMeans : history.preyGeneMeans;
+        FloatArray[] means;
+        String species;
+        switch (geneSpecies) {
+            case PREDATOR:
+                means = history.predatorGeneMeans;
+                species = "Predator";
+                break;
+            case SCAVENGER:
+                means = history.scavengerGeneMeans;
+                species = "Scavenger";
+                break;
+            default:
+                means = history.preyGeneMeans;
+                species = "Prey";
+                break;
+        }
         font.setColor(Color.WHITE);
-        font.draw(batch, (showPredatorGenes ? "Predator" : "Prey") + " average genes   (H: switch)", chartX, geneTop);
+        font.draw(batch, species + " average genes   (H: switch species)", chartX, geneTop);
         drawFrame(chartX, geneBottom, chartWidth, geneHeight);
         shapes.line(chartX, geneBottom + geneHeight / 2f, chartX + chartWidth, geneBottom + geneHeight / 2f, GRID_COLOR, 1f); // Gene = 1
         legendY = geneTop - lineHeight;

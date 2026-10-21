@@ -22,7 +22,7 @@ import com.kotcrab.vis.ui.widget.VisTextField;
  * Settings screen shown before a run: tweak the {@link SimulationConfig}, then start the simulation.
  */
 public class StartScreen extends ScreenAdapter {
-    private static final float SLIDER_WIDTH = 520f;
+    private static final float SLIDER_WIDTH = 420f;
     private static final float VALUE_WIDTH = 140f;
 
     private final Main game;
@@ -53,30 +53,52 @@ public class StartScreen extends ScreenAdapter {
 
         VisLabel title = new VisLabel("NatureSim");
         title.setFontScale(2f);
-        root.add(title).colspan(3).padBottom(4f).row();
-        root.add(new VisLabel("Tweak the world, then press Start (or Enter)", Color.LIGHT_GRAY)).colspan(3).padBottom(20f).row();
+        root.add(title).colspan(2).padBottom(4f).row();
+        root.add(new VisLabel("Tweak the world, then press Start (or Enter)", Color.LIGHT_GRAY)).colspan(2).padBottom(20f).row();
 
-        addSection(root, "Population");
-        addSlider(root, "Prey", 0, 3000, 10, config.preyCount, "%.0f", v -> config.preyCount = (int) v);
-        addSlider(root, "Predators", 0, 100, 1, config.predatorCount, "%.0f", v -> config.predatorCount = (int) v);
+        // Two columns side by side, so every setting fits on screen
+        VisTable left = new VisTable();
+        left.defaults().pad(5f);
+        VisTable right = new VisTable();
+        right.defaults().pad(5f);
+        root.add(left).top().padRight(60f);
+        root.add(right).top().row();
 
-        addSection(root, "Environment");
-        addSlider(root, "Starting food", 0, 1000, 10, config.initialFood, "%.0f", v -> config.initialFood = (int) v);
-        addSlider(root, "Max food", 0, 2000, 10, config.maxFood, "%.0f", v -> config.maxFood = (int) v);
-        addSlider(root, "Food spawn every", 0.05f, 10f, 0.05f, config.foodSpawnInterval, "%.2f s", v -> config.foodSpawnInterval = v);
-        addSlider(root, "Ponds", 0, 40, 1, config.pondCount, "%.0f", v -> config.pondCount = (int) v);
+        addSection(left, "Population");
+        addSlider(left, "Prey", 0, 3000, 10, config.preyCount, "%.0f", v -> config.preyCount = (int) v);
+        addSlider(left, "Predators", 0, 100, 1, config.predatorCount, "%.0f", v -> config.predatorCount = (int) v);
+        addSlider(left, "Scavengers", 0, 100, 1, config.scavengerCount, "%.0f", v -> config.scavengerCount = (int) v);
 
-        addSection(root, "Reproduction & evolution");
-        addSlider(root, "Lifespan", 1f, 60f, 1f, config.lifespanMinutes, "%.0f min", v -> config.lifespanMinutes = v);
-        addSlider(root, "Mating cooldown", 1f, 60f, 1f, config.matingCooldown, "%.0f s", v -> config.matingCooldown = v);
-        addSlider(root, "Mutation chance", 0f, 1f, 0.01f, config.mutationRate, "%.2f", v -> config.mutationRate = v);
-        addSlider(root, "Mutation size", 0f, 1f, 0.05f, config.mutationAmount, "%.2f", v -> config.mutationAmount = v);
+        addSection(left, "Environment");
+        addSlider(left, "Starting food", 0, 1000, 10, config.initialFood, "%.0f", v -> config.initialFood = (int) v);
+        addSlider(left, "Max food", 0, 2000, 10, config.maxFood, "%.0f", v -> config.maxFood = (int) v);
+        addSlider(left, "Food spawn every", 0.05f, 10f, 0.05f, config.foodSpawnInterval, "%.2f s", v -> config.foodSpawnInterval = v);
+        addSlider(left, "Food per item", 5f, 100f, 5f, config.foodNutrition, "%.0f", v -> config.foodNutrition = v);
+        addSlider(left, "Ponds", 0, 40, 1, config.pondCount, "%.0f", v -> config.pondCount = (int) v);
 
-        addSection(root, "Simulation & display");
-        addSeedField(root);
-        addCheckBox(root, "Creature collision", config.collisionEnabled, v -> config.collisionEnabled = v);
-        addCheckBox(root, "Show vision cones (slow with many creatures)", config.showVisionCones, v -> config.showVisionCones = v);
-        addCheckBox(root, "Show predator scent ranges", config.showScentRanges, v -> config.showScentRanges = v);
+        addSection(left, "Day, night & seasons");
+        addCheckBox(left, "Day and night (less sight at night)", config.dayNightEnabled, v -> config.dayNightEnabled = v);
+        addSlider(left, "Day length", 1f, 20f, 0.5f, config.dayLengthMinutes, "%.1f min", v -> config.dayLengthMinutes = v);
+        addCheckBox(left, "Seasons (food grows fast in summer, slowly in winter)", config.seasonsEnabled, v -> config.seasonsEnabled = v);
+        addSlider(left, "Year length", 2f, 60f, 1f, config.yearLengthMinutes, "%.0f min", v -> config.yearLengthMinutes = v);
+
+        addSection(right, "Reproduction & evolution");
+        addSlider(right, "Lifespan", 1f, 60f, 1f, config.lifespanMinutes, "%.0f min", v -> config.lifespanMinutes = v);
+        addSlider(right, "Mating cooldown", 1f, 60f, 1f, config.matingCooldown, "%.0f s", v -> config.matingCooldown = v);
+        addSlider(right, "Mutation chance", 0f, 1f, 0.01f, config.mutationRate, "%.2f", v -> config.mutationRate = v);
+        addSlider(right, "Mutation size", 0f, 1f, 0.05f, config.mutationAmount, "%.2f", v -> config.mutationAmount = v);
+
+        addSection(right, "Behaviour & balance");
+        addCheckBox(right, "Herding (prey flee together, panic spreads)", config.herdingEnabled, v -> config.herdingEnabled = v);
+        addCheckBox(right, "Migration (newcomers when a species is nearly gone)", config.migrationEnabled, v -> config.migrationEnabled = v);
+        addSlider(right, "Predator breeding slowdown", 1f, 12f, 0.5f, config.predatorBreedingSlowdown, "%.1fx", v -> config.predatorBreedingSlowdown = v);
+        addSlider(right, "Predator eating time", 0f, 20f, 0.5f, config.predatorEatingSeconds, "%.1f s", v -> config.predatorEatingSeconds = v);
+
+        addSection(right, "Simulation & display");
+        addSeedField(right);
+        addCheckBox(right, "Creature collision", config.collisionEnabled, v -> config.collisionEnabled = v);
+        addCheckBox(right, "Show vision cones (slow with many creatures)", config.showVisionCones, v -> config.showVisionCones = v);
+        addCheckBox(right, "Show predator scent ranges", config.showScentRanges, v -> config.showScentRanges = v);
 
         VisTextButton resetButton = new VisTextButton("Reset to defaults");
         resetButton.addListener(new ChangeListener() {
@@ -103,7 +125,7 @@ public class StartScreen extends ScreenAdapter {
         buttons.defaults().pad(8f).minWidth(300f).height(70f);
         buttons.add(resetButton);
         buttons.add(startButton);
-        root.add(buttons).colspan(3).padTop(24f).row();
+        root.add(buttons).colspan(2).padTop(24f).row();
     }
 
     private void addSection(VisTable table, String name) {

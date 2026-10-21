@@ -13,52 +13,59 @@ import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
+import io.kostenarov.natureSim.SimulationConfig;
 import io.kostenarov.natureSim.Traits;
+import io.kostenarov.natureSim.Creatures;
+import io.kostenarov.natureSim.Mappers;
+import io.kostenarov.natureSim.Balance;
 
 /**
  * Predator behaviour: rest, drink, wander while sated, and when hungry hunt prey by sight or follow its scent.
  */
 public class PredatorSystem extends CreatureSystem {
-    private static final float MATE_SCENT_FACTOR = 3f;
 
     private ImmutableArray<Entity> preyEntities;
 
+    private final float eatingSeconds; // Time spent eating each kill (caps how fast one predator can kill)
+
     public PredatorSystem() {
-        super(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class, VisionComponent.class,
-            GenderComponent.class, StatsComponent.class, BehaviourComponent.class, PredatorComponent.class).get());
+        this(new SimulationConfig());
+    }
+
+    public PredatorSystem(SimulationConfig config) {
+        super(Creatures.PREDATORS);
+        this.eatingSeconds = config.predatorEatingSeconds;
     }
 
     @Override
     public void addedToEngine(Engine engine) {
         super.addedToEngine(engine);
-        preyEntities = engine.getEntitiesFor(Family.all(PositionComponent.class, VelocityComponent.class, GenomeComponent.class,
-            VisionComponent.class, GenderComponent.class, StatsComponent.class, BehaviourComponent.class)
-            .exclude(PredatorComponent.class).get());
+        preyEntities = engine.getEntitiesFor(Creatures.PREY);
     }
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
-        PredatorComponent predator = entity.getComponent(PredatorComponent.class);
+        PredatorComponent predator = Mappers.predator.get(entity);
         predator.attackTimer = Math.max(0f, predator.attackTimer - deltaTime);
         if (predator.eatingTimer > 0f) {
             // Still eating the last kill: stay put (counts as resting for metabolism)
             predator.eatingTimer -= deltaTime;
-            entity.getComponent(BehaviourComponent.class).behaviour = EntityBehaviour.IDLE;
+            Mappers.behaviour.get(entity).behaviour = EntityBehaviour.IDLE;
             stop(entity);
             return;
         }
         super.processEntity(entity, deltaTime);
-        if (entity.getComponent(BehaviourComponent.class).exhausted) {
+        if (Mappers.behaviour.get(entity).exhausted) {
             clearScentTarget(predator); // The trail goes cold while it recovers
         }
     }
 
     @Override
     protected EntityBehaviour decideBehaviour(Entity entity) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
-        PredatorComponent predator = entity.getComponent(PredatorComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
+        StatsComponent stats = Mappers.stats.get(entity);
+        BehaviourComponent behaviour = Mappers.behaviour.get(entity);
+        PredatorComponent predator = Mappers.predator.get(entity);
+        GenomeComponent dna = Mappers.genome.get(entity);
 
         // (Running out of energy is handled before any decision: see CreatureSystem.)
         boolean hungry = isHungry(stats, predator);
@@ -78,26 +85,20 @@ public class PredatorSystem extends CreatureSystem {
             if (!predator.hasScentTarget) {
                 Entity smelledPrey = findNearestSmelledPrey(entity);
                 if (smelledPrey != null) {
-                    rememberScentTarget(predator, smelledPrey.getComponent(PositionComponent.class));
+                    rememberScentTarget(predator, Mappers.position.get(smelledPrey));
                 }
             }
             return EntityBehaviour.EXPLORING; // Explore follows the scent if there is one
         }
 
-        float distance = entity.getComponent(PositionComponent.class).position.dst(prey.getComponent(PositionComponent.class).position);
+        float distance = Mappers.position.get(entity).position.dst(Mappers.position.get(prey).position);
         return distance <= predator.attackRange ? EntityBehaviour.ATTACKING : EntityBehaviour.HUNTING;
     }
 
     /** Predators are few and far between, so they find mates by smell (a mate's scent carries further than prey's). */
     @Override
-    protected float partnerSearchRange(Entity entity) {
-        return entity.getComponent(PredatorComponent.class).scentRange * MATE_SCENT_FACTOR;
-    }
-
-    @Override
-    protected boolean canDetectPartner(Entity entity, Entity candidate) {
-        float range = partnerSearchRange(entity);
-        return entity.getComponent(PositionComponent.class).position.dst2(candidate.getComponent(PositionComponent.class).position) <= range * range;
+    protected float mateScentRange(Entity entity) {
+        return Mappers.predator.get(entity).scentRange * Balance.MATE_SCENT_FACTOR;
     }
 
     private boolean isHungry(StatsComponent stats, PredatorComponent predator) {
@@ -120,10 +121,10 @@ public class PredatorSystem extends CreatureSystem {
                 break;
             case EXPLORING:
                 // decideBehaviour only sets a scent target while the predator is hungry.
-                PredatorComponent predator = entity.getComponent(PredatorComponent.class);
+                PredatorComponent predator = Mappers.predator.get(entity);
                 if (predator.hasScentTarget) {
                     followScent(entity, deltaTime);
-                } else if (isHungry(entity.getComponent(StatsComponent.class), predator)) {
+                } else if (isHungry(Mappers.stats.get(entity), predator)) {
                     roamNearWater(entity, deltaTime); // Prey gather at the waterholes
                 } else {
                     explore(entity, deltaTime);
@@ -136,7 +137,7 @@ public class PredatorSystem extends CreatureSystem {
     }
 
     private void huntPrey(Entity predator, float deltaTime) {
-        PredatorComponent predatorData = predator.getComponent(PredatorComponent.class);
+        PredatorComponent predatorData = Mappers.predator.get(predator);
 
         Entity prey = findNearestVisiblePrey(predator);
         if (prey == null) {
@@ -144,8 +145,8 @@ public class PredatorSystem extends CreatureSystem {
             return;
         }
 
-        PositionComponent preyPos = prey.getComponent(PositionComponent.class);
-        float distance = predator.getComponent(PositionComponent.class).position.dst(preyPos.position);
+        PositionComponent preyPos = Mappers.position.get(prey);
+        float distance = Mappers.position.get(predator).position.dst(preyPos.position);
         if (distance <= predatorData.attackRange) {
             if (predatorData.attackTimer <= 0f) {
                 attackPrey(predator, prey);
@@ -155,15 +156,15 @@ public class PredatorSystem extends CreatureSystem {
             return;
         }
 
-        GenomeComponent dna = predator.getComponent(GenomeComponent.class);
+        GenomeComponent dna = Mappers.genome.get(predator);
         float speed = Traits.speed(dna) * predatorData.huntSpeedMultiplier * Traits.pursuitSpeedFactor(dna);
         moveToward(predator, preyPos.position, speed, deltaTime);
     }
 
     /** Walk to where prey was last smelled; on arrival, pick up the next scent or give up. */
     private void followScent(Entity predator, float deltaTime) {
-        PredatorComponent predatorData = predator.getComponent(PredatorComponent.class);
-        PositionComponent predatorPos = predator.getComponent(PositionComponent.class);
+        PredatorComponent predatorData = Mappers.predator.get(predator);
+        PositionComponent predatorPos = Mappers.position.get(predator);
 
         if (predatorPos.position.dst(predatorData.scentTarget) <= predatorData.scentReachThreshold) {
             stop(predator);
@@ -172,14 +173,14 @@ public class PredatorSystem extends CreatureSystem {
             }
             Entity nextSmell = findNearestSmelledPrey(predator);
             if (nextSmell != null) {
-                rememberScentTarget(predatorData, nextSmell.getComponent(PositionComponent.class));
+                rememberScentTarget(predatorData, Mappers.position.get(nextSmell));
             } else {
                 clearScentTarget(predatorData);
             }
             return;
         }
 
-        float speed = Traits.speed(predator.getComponent(GenomeComponent.class)) * predatorData.scentSpeedMultiplier;
+        float speed = Traits.speed(Mappers.genome.get(predator)) * predatorData.scentSpeedMultiplier;
         boolean hitBoundary = moveToward(predator, predatorData.scentTarget, speed, deltaTime);
         if (hitBoundary) {
             stop(predator);
@@ -188,29 +189,30 @@ public class PredatorSystem extends CreatureSystem {
     }
 
     private void attackPrey(Entity predator, Entity prey) {
-        StatsComponent predatorStats = predator.getComponent(StatsComponent.class);
-        PredatorComponent predatorData = predator.getComponent(PredatorComponent.class);
-        StatsComponent preyStats = prey.getComponent(StatsComponent.class);
+        StatsComponent predatorStats = Mappers.stats.get(predator);
+        PredatorComponent predatorData = Mappers.predator.get(predator);
+        StatsComponent preyStats = Mappers.stats.get(prey);
 
-        float damage = Traits.biteDamage(predatorData.attackDamage, predator.getComponent(GenomeComponent.class), prey.getComponent(GenomeComponent.class));
+        float damage = Traits.biteDamage(predatorData.attackDamage, Mappers.genome.get(predator), Mappers.genome.get(prey));
         preyStats.health = Math.max(0f, preyStats.health - damage);
         if (preyStats.health <= 0f) {
             predatorStats.energy = Math.min(100f, predatorStats.energy + predatorData.killEnergyGain);
             predatorStats.hunger = Math.min(100f, predatorStats.hunger + predatorData.killEnergyGain);
             clearScentTarget(predatorData);
-            predatorData.eatingTimer = predatorData.eatingDuration;
+            predatorData.eatingTimer = eatingSeconds;
+            CarcassSystem.leaveCarcass(getEngine(), prey, Balance.KILL_CARCASS_FOOD); // Leftovers for scavengers
             getEngine().removeEntity(prey);
         }
     }
 
     private Entity findNearestVisiblePrey(Entity predator) {
-        PositionComponent predatorPos = predator.getComponent(PositionComponent.class);
-        VisionComponent vision = predator.getComponent(VisionComponent.class);
+        PositionComponent predatorPos = Mappers.position.get(predator);
+        VisionComponent vision = Mappers.vision.get(predator);
 
         Entity nearestPrey = null;
         float nearestDistance = Float.MAX_VALUE;
         for (Entity candidate : preyEntities) {
-            PositionComponent candidatePos = candidate.getComponent(PositionComponent.class);
+            PositionComponent candidatePos = Mappers.position.get(candidate);
             if (canSee(predatorPos, vision, candidate)) {
                 float distance = predatorPos.position.dst(candidatePos.position);
                 if (distance < nearestDistance) {
@@ -223,13 +225,13 @@ public class PredatorSystem extends CreatureSystem {
     }
 
     private Entity findNearestSmelledPrey(Entity predator) {
-        PositionComponent predatorPos = predator.getComponent(PositionComponent.class);
-        PredatorComponent predatorData = predator.getComponent(PredatorComponent.class);
+        PositionComponent predatorPos = Mappers.position.get(predator);
+        PredatorComponent predatorData = Mappers.predator.get(predator);
 
         Entity nearestPrey = null;
         float nearestDistance = Float.MAX_VALUE;
         for (Entity candidate : preyEntities) {
-            float distance = predatorPos.position.dst(candidate.getComponent(PositionComponent.class).position);
+            float distance = predatorPos.position.dst(Mappers.position.get(candidate).position);
             if (distance <= predatorData.scentRange && distance < nearestDistance) {
                 nearestDistance = distance;
                 nearestPrey = candidate;

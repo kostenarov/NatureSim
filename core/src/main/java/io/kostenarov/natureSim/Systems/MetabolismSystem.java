@@ -9,6 +9,8 @@ import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
 import io.kostenarov.natureSim.Traits;
+import io.kostenarov.natureSim.Creatures;
+import io.kostenarov.natureSim.Mappers;
 
 /**
  * Applies hunger, thirst and energy upkeep to every creature, based on what it did this step:
@@ -23,14 +25,14 @@ public class MetabolismSystem extends IteratingSystem {
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
-        StatsComponent stats = entity.getComponent(StatsComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        boolean predator = entity.getComponent(PredatorComponent.class) != null;
+        StatsComponent stats = Mappers.stats.get(entity);
+        GenomeComponent dna = Mappers.genome.get(entity);
+        boolean usesScent = Creatures.usesScent(entity);
 
-        if (entity.getComponent(BehaviourComponent.class).behaviour == EntityBehaviour.IDLE) {
-            Traits.rest(stats, dna, predator, deltaTime);
+        if (Mappers.behaviour.get(entity).behaviour == EntityBehaviour.IDLE) {
+            Traits.rest(stats, dna, usesScent, deltaTime);
         } else {
-            Traits.burnActive(stats, dna, predator, deltaTime);
+            Traits.burnActive(stats, dna, usesScent, deltaTime);
         }
     }
 }

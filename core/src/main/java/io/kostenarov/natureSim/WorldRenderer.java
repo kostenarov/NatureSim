@@ -20,12 +20,15 @@ import io.kostenarov.natureSim.Components.PredatorComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
+import io.kostenarov.natureSim.Enums.Role;
+import io.kostenarov.natureSim.Systems.CarcassSystem;
+import io.kostenarov.natureSim.Systems.ClockSystem;
 import io.kostenarov.natureSim.Systems.WaterSourceSystem;
 import space.earlygrey.shapedrawer.ShapeDrawer;
 
 /**
- * Draws the world: ground, ponds, vision cones, scent ranges, food and creatures.
- * Anything outside the camera's view is skipped.
+ * Draws the world: ground (tinted by season), ponds, vision cones, scent ranges, food, carcasses, creatures,
+ * and the dark of night on top. Anything outside the camera's view is skipped.
  */
 public class WorldRenderer implements Disposable {
     private static final float TILE_SIZE = 40f;
@@ -39,6 +42,7 @@ public class WorldRenderer implements Disposable {
     private final Texture preyTexture;
     private final Texture predatorTexture;
     private final Texture foodTexture;
+    private final Texture carcassTexture;
     private final Texture fieldTexture;
     private final TextureRegion tileRegion;
 
@@ -51,12 +55,23 @@ public class WorldRenderer implements Disposable {
     private final Color scentFillColor = new Color(1f, 0.1f, 0.1f, 0.10f);
     private final Color scentOutlineColor = new Color(1f, 0.1f, 0.1f, 0.25f);
     private final Color scentTargetColor = new Color(1f, 0.2f, 0.2f, 0.6f);
+    private final Color scavengerColor = new Color(0.78f, 0.55f, 1f, 1f);
+    private final Color nightColor = new Color(0.02f, 0.03f, 0.12f, 0f);
+    private final Color groundTint = new Color(1f, 1f, 1f, 1f);
+    private final Color carcassTint = new Color(1f, 1f, 1f, 1f);
+    // Ground color per season: spring as drawn, summer warmer, autumn browner, winter frosted
+    private static final Color[] SEASON_GROUND = {
+        new Color(1f, 1f, 1f, 1f), new Color(1.0f, 0.97f, 0.82f, 1f), new Color(1.0f, 0.86f, 0.68f, 1f), new Color(0.86f, 0.92f, 1.0f, 1f)
+    };
+    private static final float MAX_NIGHT_DARKNESS = 0.55f;
 
     private final ImmutableArray<Entity> ponds;
     private final ImmutableArray<Entity> seeingCreatures;
     private final ImmutableArray<Entity> predators;
     private final ImmutableArray<Entity> food;
     private final ImmutableArray<Entity> creatures;
+    private final ImmutableArray<Entity> carcasses;
+    private final ClockSystem clock; // May be null (no day/night or seasons)
 
     private int tintGene = -1;
     private final Color tint = new Color(1f, 1f, 1f, 1f);
@@ -75,6 +90,7 @@ public class WorldRenderer implements Disposable {
         preyTexture = new Texture("agent.png");
         predatorTexture = new Texture("agentPredator.png");
         foodTexture = createFoodTexture();
+        carcassTexture = createCarcassTexture();
         fieldTexture = new Texture(Gdx.files.internal("field.png"), true);
         fieldTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         tileRegion = new TextureRegion(fieldTexture, 0, 0,
@@ -85,6 +101,8 @@ public class WorldRenderer implements Disposable {
         predators = engine.getEntitiesFor(Family.all(PositionComponent.class, PredatorComponent.class).get());
         food = engine.getEntitiesFor(Family.all(FoodSourceComponent.class, PositionComponent.class).get());
         creatures = engine.getEntitiesFor(Family.all(PositionComponent.class, StatsComponent.class).get());
+        carcasses = engine.getEntitiesFor(CarcassSystem.CARCASSES);
+        clock = engine.getSystem(ClockSystem.class);
     }
 
     /** A simple green circle. */
@@ -92,6 +110,18 @@ public class WorldRenderer implements Disposable {
         Pixmap pixmap = new Pixmap(16, 16, Pixmap.Format.RGBA8888);
         pixmap.setColor(0.2f, 0.8f, 0.2f, 1f);
         pixmap.fillCircle(8, 8, 7);
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        return texture;
+    }
+
+    /** A dark red-brown blot. */
+    private static Texture createCarcassTexture() {
+        Pixmap pixmap = new Pixmap(20, 20, Pixmap.Format.RGBA8888);
+        pixmap.setColor(0.45f, 0.12f, 0.10f, 0.9f);
+        pixmap.fillCircle(10, 10, 9);
+        pixmap.setColor(0.85f, 0.80f, 0.70f, 1f); // A glimpse of bone
+        pixmap.fillRectangle(6, 9, 8, 2);
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
         return texture;
@@ -112,7 +142,9 @@ public class WorldRenderer implements Disposable {
             drawScentRanges();
         }
         drawFood();
+        drawCarcasses();
         drawCreatures();
+        drawNight();
 
         batch.end();
     }
@@ -140,18 +172,55 @@ public class WorldRenderer implements Disposable {
         int firstRow = (int) Math.floor(Math.max(0f, visibleBottom) / TILE_SIZE);
         int lastRow = (int) Math.floor(Math.min(World.HEIGHT - 1f, visibleTop) / TILE_SIZE);
 
+        batch.setColor(seasonGroundColor());
         for (int column = firstColumn; column <= lastColumn; column++) {
             for (int row = firstRow; row <= lastRow; row++) {
                 batch.draw(tileRegion, column * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             }
+        }
+        batch.setColor(Color.WHITE);
+    }
+
+    /** Blends smoothly between the season colors over the year. */
+    private Color seasonGroundColor() {
+        if (clock == null || !clock.isSeasonsEnabled()) {
+            return Color.WHITE;
+        }
+        float position = clock.yearPhase() * 4f + 0.5f; // Each season's color peaks at its middle
+        int from = (int) Math.floor(position - 0.5f) & 3;
+        float blend = (position - 0.5f) - (float) Math.floor(position - 0.5f);
+        return groundTint.set(SEASON_GROUND[from]).lerp(SEASON_GROUND[(from + 1) & 3], blend);
+    }
+
+    private void drawCarcasses() {
+        for (Entity carcass : carcasses) {
+            PositionComponent pos = Mappers.position.get(carcass);
+            if (isVisible(pos.position.x, pos.position.y, 20f)) {
+                // Fades as it gets eaten or rots
+                carcassTint.a = MathUtils.clamp(Mappers.carcass.get(carcass).food / Balance.CARCASS_FOOD, 0.25f, 1f);
+                batch.setColor(carcassTint);
+                batch.draw(carcassTexture, pos.position.x + 6f, pos.position.y + 6f);
+            }
+        }
+        batch.setColor(Color.WHITE);
+    }
+
+    /** Darkens the view at night (nothing with day/night switched off). */
+    private void drawNight() {
+        if (clock == null) {
+            return;
+        }
+        nightColor.a = (1f - clock.daylight()) * MAX_NIGHT_DARKNESS;
+        if (nightColor.a > 0.01f) {
+            shapeDrawer.filledRectangle(visibleLeft, visibleBottom, visibleRight - visibleLeft, visibleTop - visibleBottom, nightColor);
         }
     }
 
     /** Ponds sit underneath everything else; their position is the pond center. */
     private void drawPonds() {
         for (Entity pond : ponds) {
-            PositionComponent pos = pond.getComponent(PositionComponent.class);
-            float radius = pond.getComponent(WaterSourceComponent.class).radius;
+            PositionComponent pos = Mappers.position.get(pond);
+            float radius = Mappers.waterSource.get(pond).radius;
             if (isVisible(pos.position.x, pos.position.y, radius)) {
                 // Light shallows creatures can wade into, around darker deep water they can't enter
                 drawFilledCircle(pos.position.x, pos.position.y, radius, shallowWaterColor);
@@ -163,8 +232,8 @@ public class WorldRenderer implements Disposable {
 
     private void drawVisionCones() {
         for (Entity creature : seeingCreatures) {
-            PositionComponent pos = creature.getComponent(PositionComponent.class);
-            VisionComponent vision = creature.getComponent(VisionComponent.class);
+            PositionComponent pos = Mappers.position.get(creature);
+            VisionComponent vision = Mappers.vision.get(creature);
             float centerX = pos.position.x + World.CREATURE_HALF_SIZE;
             float centerY = pos.position.y + World.CREATURE_HALF_SIZE;
             if (isVisible(centerX, centerY, vision.visionRange)) {
@@ -175,8 +244,8 @@ public class WorldRenderer implements Disposable {
 
     private void drawScentRanges() {
         for (Entity predator : predators) {
-            PositionComponent pos = predator.getComponent(PositionComponent.class);
-            PredatorComponent predatorData = predator.getComponent(PredatorComponent.class);
+            PositionComponent pos = Mappers.position.get(predator);
+            PredatorComponent predatorData = Mappers.predator.get(predator);
             float centerX = pos.position.x + World.CREATURE_HALF_SIZE;
             float centerY = pos.position.y + World.CREATURE_HALF_SIZE;
             if (isVisible(centerX, centerY, predatorData.scentRange)) {
@@ -195,7 +264,7 @@ public class WorldRenderer implements Disposable {
 
     private void drawFood() {
         for (Entity item : food) {
-            PositionComponent pos = item.getComponent(PositionComponent.class);
+            PositionComponent pos = Mappers.position.get(item);
             if (isVisible(pos.position.x, pos.position.y, 16f)) {
                 batch.draw(foodTexture, pos.position.x, pos.position.y);
             }
@@ -204,10 +273,12 @@ public class WorldRenderer implements Disposable {
 
     private void drawCreatures() {
         for (Entity creature : creatures) {
-            PositionComponent pos = creature.getComponent(PositionComponent.class);
+            PositionComponent pos = Mappers.position.get(creature);
             if (isVisible(pos.position.x, pos.position.y, World.CREATURE_SIZE)) {
                 if (tintGene >= 0) {
-                    batch.setColor(geneColor(creature.getComponent(GenomeComponent.class).genes[tintGene]));
+                    batch.setColor(geneColor(Mappers.genome.get(creature).genes[tintGene]));
+                } else {
+                    batch.setColor(Creatures.role(creature) == Role.SCAVENGER ? scavengerColor : Color.WHITE);
                 }
                 Texture texture = Creatures.isPredator(creature) ? predatorTexture : preyTexture;
                 batch.draw(texture, pos.position.x, pos.position.y);
@@ -233,7 +304,7 @@ public class WorldRenderer implements Disposable {
     private void drawVisionCone(float centerX, float centerY, VisionComponent vision) {
         float startAngle = vision.directionAngle - vision.visionAngle / 2f;
         float endAngle = vision.directionAngle + vision.visionAngle / 2f;
-        float range = vision.visionRange;
+        float range = vision.visionRange * (clock != null ? clock.visionScale() : 1f); // Shorter sight at night
 
         // Edges of the cone
         shapeDrawer.line(centerX, centerY, centerX + range * MathUtils.cosDeg(startAngle), centerY + range * MathUtils.sinDeg(startAngle), visionColor, 2f);
@@ -284,6 +355,7 @@ public class WorldRenderer implements Disposable {
         preyTexture.dispose();
         predatorTexture.dispose();
         foodTexture.dispose();
+        carcassTexture.dispose();
         fieldTexture.dispose();
     }
 }

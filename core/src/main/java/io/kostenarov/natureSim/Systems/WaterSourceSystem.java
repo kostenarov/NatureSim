@@ -12,6 +12,8 @@ import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
 import io.kostenarov.natureSim.SimulationConfig;
+import io.kostenarov.natureSim.Mappers;
+import io.kostenarov.natureSim.Balance;
 
 /**
  * Places ponds on the map at startup and holds the shared drinking rules used by the creature systems.
@@ -23,11 +25,6 @@ public class WaterSourceSystem extends EntitySystem {
     private static final int MAX_PLACEMENT_ATTEMPTS = 50;
 
     public static final Family WATER_FAMILY = Family.all(WaterSourceComponent.class, PositionComponent.class).get();
-    // When to start drinking is genetic (Traits.waterSeekThreshold)
-    public static final float WATER_FULL_THRESHOLD = 98f;  // Stop drinking once thirst is back above this
-    public static final float DRINK_RATE_PER_SEC = 25f;    // Thirst restored per second while drinking
-    private static final float DRINK_MARGIN = 24f;         // How far outside the shore a creature can still drink
-    public static final float SHALLOW_WIDTH = 40f;         // Wadeable band inside the shore; deeper water is impassable
     private static final float CREATURE_BODY_RADIUS = 13f; // Same body size collisions use
 
     private final int pondCount;
@@ -73,8 +70,8 @@ public class WaterSourceSystem extends EntitySystem {
 
     private boolean overlapsExistingPond(float x, float y, float radius) {
         for (Entity other : ponds) {
-            PositionComponent otherPos = other.getComponent(PositionComponent.class);
-            float otherRadius = other.getComponent(WaterSourceComponent.class).radius;
+            PositionComponent otherPos = Mappers.position.get(other);
+            float otherRadius = Mappers.waterSource.get(other).radius;
             if (otherPos.position.dst(x, y) < radius + otherRadius + MIN_POND_GAP) {
                 return true;
             }
@@ -90,8 +87,8 @@ public class WaterSourceSystem extends EntitySystem {
         Entity nearest = null;
         float nearestShoreDistance = Float.MAX_VALUE;
         for (Entity pond : ponds) {
-            PositionComponent pondPos = pond.getComponent(PositionComponent.class);
-            float shoreDistance = pondPos.position.dst(centerX, centerY) - pond.getComponent(WaterSourceComponent.class).radius;
+            PositionComponent pondPos = Mappers.position.get(pond);
+            float shoreDistance = pondPos.position.dst(centerX, centerY) - Mappers.waterSource.get(pond).radius;
             if (shoreDistance < nearestShoreDistance) {
                 nearestShoreDistance = shoreDistance;
                 nearest = pond;
@@ -102,31 +99,31 @@ public class WaterSourceSystem extends EntitySystem {
 
     /** True when the creature is close enough to the pond to drink. */
     public static boolean canDrinkFrom(Entity pond, PositionComponent creaturePos) {
-        return distanceFromShore(pond, creaturePos) <= DRINK_MARGIN;
+        return distanceFromShore(pond, creaturePos) <= Balance.DRINK_MARGIN;
     }
 
     /** How far the creature's center is from the pond's shore (negative when standing in the water). */
     public static float distanceFromShore(Entity pond, PositionComponent creaturePos) {
-        PositionComponent pondPos = pond.getComponent(PositionComponent.class);
-        float radius = pond.getComponent(WaterSourceComponent.class).radius;
+        PositionComponent pondPos = Mappers.position.get(pond);
+        float radius = Mappers.waterSource.get(pond).radius;
         return pondPos.position.dst(creaturePos.position.x + World.CREATURE_HALF_SIZE, creaturePos.position.y + World.CREATURE_HALF_SIZE) - radius;
     }
 
     /** Where a creature's PositionComponent should head to reach the pond (aims its center at the pond center). */
     public static Vector2 approachPoint(Entity pond, Vector2 out) {
-        PositionComponent pondPos = pond.getComponent(PositionComponent.class);
+        PositionComponent pondPos = Mappers.position.get(pond);
         return out.set(pondPos.position.x - World.CREATURE_HALF_SIZE, pondPos.position.y - World.CREATURE_HALF_SIZE);
     }
 
     public static void drink(StatsComponent stats, float deltaTime) {
-        stats.thirst = Math.min(100f, stats.thirst + DRINK_RATE_PER_SEC * deltaTime);
+        stats.thirst = Math.min(100f, stats.thirst + Balance.DRINK_RATE * deltaTime);
     }
 
     // --- Deep water -------------------------------------------------------------------------------------
 
-    /** Radius of the impassable deep part of a pond; the band outside it (SHALLOW_WIDTH wide) can be waded into. */
+    /** Radius of the impassable deep part of a pond; the band outside it (Balance.SHALLOW_WIDTH wide) can be waded into. */
     public static float deepRadius(Entity pond) {
-        return Math.max(0f, pond.getComponent(WaterSourceComponent.class).radius - SHALLOW_WIDTH);
+        return Math.max(0f, Mappers.waterSource.get(pond).radius - Balance.SHALLOW_WIDTH);
     }
 
     /**
@@ -135,7 +132,7 @@ public class WaterSourceSystem extends EntitySystem {
     public static boolean isInDeepWater(ImmutableArray<Entity> ponds, float x, float y, float bodyRadius) {
         for (Entity pond : ponds) {
             float limit = deepRadius(pond) + bodyRadius;
-            if (pond.getComponent(PositionComponent.class).position.dst2(x, y) < limit * limit) {
+            if (Mappers.position.get(pond).position.dst2(x, y) < limit * limit) {
                 return true;
             }
         }
@@ -149,7 +146,7 @@ public class WaterSourceSystem extends EntitySystem {
     public static boolean pushOutOfDeepWater(ImmutableArray<Entity> ponds, Vector2 position) {
         boolean moved = false;
         for (Entity pond : ponds) {
-            Vector2 center = pond.getComponent(PositionComponent.class).position;
+            Vector2 center = Mappers.position.get(pond).position;
             float limit = deepRadius(pond) + CREATURE_BODY_RADIUS;
             float creatureX = position.x + World.CREATURE_HALF_SIZE;
             float creatureY = position.y + World.CREATURE_HALF_SIZE;
@@ -181,7 +178,7 @@ public class WaterSourceSystem extends EntitySystem {
         float nextX = position.x + World.CREATURE_HALF_SIZE + direction.x * stepLength;
         float nextY = position.y + World.CREATURE_HALF_SIZE + direction.y * stepLength;
         for (Entity pond : ponds) {
-            Vector2 center = pond.getComponent(PositionComponent.class).position;
+            Vector2 center = Mappers.position.get(pond).position;
             float limit = deepRadius(pond) + CREATURE_BODY_RADIUS;
             float dx = nextX - center.x;
             float dy = nextY - center.y;

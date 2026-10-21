@@ -52,6 +52,11 @@ public abstract class SimTestSupport {
         for (int i = 0; i < (int) (seconds / DT); i++) e.update(DT);
     }
 
+    /** Living creatures only: dead ones leave carcasses, which are entities too. */
+    protected static int creatureCount(Engine e) {
+        return e.getEntitiesFor(com.badlogic.ashley.core.Family.all(StatsComponent.class).get()).size();
+    }
+
     protected static StatsComponent stats(Entity e) {
         return e.getComponent(StatsComponent.class);
     }

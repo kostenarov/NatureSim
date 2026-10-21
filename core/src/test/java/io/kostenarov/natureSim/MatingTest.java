@@ -26,7 +26,7 @@ class MatingTest extends SimTestSupport {
         creature(e, 100, 100, Gender.MALE, true);
         creature(e, 110, 100, Gender.FEMALE, false);
         run(e, 1f);
-        assertEquals(2, e.getEntities().size(), "entities");
+        assertEquals(2, creatureCount(e), "entities");
     }
 
     @Test
@@ -38,7 +38,7 @@ class MatingTest extends SimTestSupport {
         creature(e, 110, 100, Gender.FEMALE, true);
         run(e, 1f);
         int predators = e.getEntitiesFor(Family.all(PredatorComponent.class).get()).size();
-        assertEquals(3, e.getEntities().size(), "entities");
+        assertEquals(3, creatureCount(e), "entities");
         assertEquals(3, predators, "predators");
     }
 
@@ -53,7 +53,7 @@ class MatingTest extends SimTestSupport {
         Arrays.fill(a.getComponent(GenomeComponent.class).genes, 0.2f);
         Arrays.fill(b.getComponent(GenomeComponent.class).genes, 1.8f);
         e.update(DT);
-        assertEquals(3, e.getEntities().size(), "parents did not mate");
+        assertEquals(3, creatureCount(e), "parents did not mate");
         return e.getEntities().get(2);
     }
 
@@ -95,12 +95,12 @@ class MatingTest extends SimTestSupport {
         creature(e, 110, 100, Gender.FEMALE, false);
         stats(a).hunger = 40f;
         e.update(DT);
-        int whileHungry = e.getEntities().size();
+        int whileHungry = creatureCount(e);
         stats(a).hunger = 100f;
         e.update(DT);
 
         assertEquals(2, whileHungry, "entities while hungry");
-        assertEquals(3, e.getEntities().size(), "entities after feeding");
-        assertEquals(100f - ReproductionComponent.MATING_HUNGER_COST, stats(a).hunger, "parent hunger after mating");
+        assertEquals(3, creatureCount(e), "entities after feeding");
+        assertEquals(100f - Balance.MATING_HUNGER_COST, stats(a).hunger, "parent hunger after mating");
     }
 }

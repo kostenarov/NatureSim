@@ -18,6 +18,8 @@ import io.kostenarov.natureSim.Components.VisionComponent;
 import io.kostenarov.natureSim.Enums.EntityBehaviour;
 import io.kostenarov.natureSim.Traits;
 import io.kostenarov.natureSim.World;
+import io.kostenarov.natureSim.Mappers;
+import io.kostenarov.natureSim.Balance;
 
 /**
  * Shared base for the creature behaviour systems: each step a creature decides what to do
@@ -27,12 +29,6 @@ import io.kostenarov.natureSim.World;
  */
 public abstract class CreatureSystem extends IteratingSystem {
     // A creature that runs out of energy collapses and rests, whatever else it needs, until it has
-    // recovered this much. Without the gap it would stagger: one step, out of energy, one step...
-    public static final float EXHAUSTION_RECOVERY_THRESHOLD = 30f;
-    // With nothing else to do, a resting creature stays put until this fresh
-    protected static final float IDLE_RESUME_THRESHOLD = 80f;
-    // How far from a pond's shore still counts as "at the waterhole" (matches the band where food grows)
-    private static final float WATERHOLE_RANGE = 300f;
 
     protected final Vector2 tmp = new Vector2(); // Scratch vector, avoids allocating every frame
     private final Vector2 heading = new Vector2();
@@ -40,9 +36,18 @@ public abstract class CreatureSystem extends IteratingSystem {
     private final Vector2 waterTarget = new Vector2();
     private ImmutableArray<Entity> waterEntities;
     private ImmutableArray<Entity> allCreatures;
+    private float lightLevel = 1f; // Share of normal sight range available this step
 
     protected CreatureSystem(Family family) {
         super(family);
+    }
+
+    @Override
+    public void update(float deltaTime) {
+        // Sight depends on daylight; smell doesn't (see ClockSystem)
+        ClockSystem clock = getEngine().getSystem(ClockSystem.class);
+        lightLevel = clock != null ? clock.visionScale() : 1f;
+        super.update(deltaTime);
     }
 
     @Override
@@ -54,7 +59,7 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
-        BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
+        BehaviourComponent behaviour = Mappers.behaviour.get(entity);
         if (isExhausted(entity, behaviour)) {
             behaviour.behaviour = EntityBehaviour.IDLE;
             stop(entity);
@@ -66,13 +71,13 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     /**
      * Out of energy: the creature rests no matter how hungry, thirsty or threatened it is, and stays down
-     * until its energy is back up to {@link #EXHAUSTION_RECOVERY_THRESHOLD}.
+     * until its energy is back up to {@link #Balance.EXHAUSTION_RECOVERY_THRESHOLD}.
      */
     private static boolean isExhausted(Entity entity, BehaviourComponent behaviour) {
-        float energy = entity.getComponent(StatsComponent.class).energy;
+        float energy = Mappers.stats.get(entity).energy;
         if (energy <= 0f) {
             behaviour.exhausted = true;
-        } else if (behaviour.exhausted && energy >= EXHAUSTION_RECOVERY_THRESHOLD) {
+        } else if (behaviour.exhausted && energy >= Balance.EXHAUSTION_RECOVERY_THRESHOLD) {
             behaviour.exhausted = false;
         }
         return behaviour.exhausted;
@@ -86,7 +91,7 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     /** Drink when thirst is the more urgent need; once drinking, keep drinking until quenched. */
     protected boolean wantsWater(StatsComponent stats, BehaviourComponent behaviour, GenomeComponent dna, boolean hungry) {
-        boolean keepDrinking = behaviour.behaviour == EntityBehaviour.SEEKING_WATER && stats.thirst < WaterSourceSystem.WATER_FULL_THRESHOLD;
+        boolean keepDrinking = behaviour.behaviour == EntityBehaviour.SEEKING_WATER && stats.thirst < Balance.WATER_FULL_THRESHOLD;
         boolean thirsty = stats.thirst < Traits.waterSeekThreshold(dna);
         return keepDrinking || (thirsty && (!hungry || stats.thirst < stats.hunger));
     }
@@ -97,22 +102,22 @@ public abstract class CreatureSystem extends IteratingSystem {
      */
     protected EntityBehaviour restOrWander(StatsComponent stats, BehaviourComponent behaviour) {
         boolean resting = behaviour.behaviour == EntityBehaviour.IDLE;
-        return resting && stats.energy < IDLE_RESUME_THRESHOLD ? EntityBehaviour.IDLE : EntityBehaviour.EXPLORING;
+        return resting && stats.energy < Balance.IDLE_RESUME_THRESHOLD ? EntityBehaviour.IDLE : EntityBehaviour.EXPLORING;
     }
 
     // --- Actions ----------------------------------------------------------------------------------------
 
     protected void stop(Entity entity) {
-        entity.getComponent(VelocityComponent.class).velocity.setZero();
+        Mappers.velocity.get(entity).velocity.setZero();
     }
 
     /** Wander between random points inside the vision cone, pausing to look around at each one. */
     protected void explore(Entity entity, float deltaTime) {
-        BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
-        VelocityComponent vel = entity.getComponent(VelocityComponent.class);
-        GenomeComponent dna = entity.getComponent(GenomeComponent.class);
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
-        VisionComponent vision = entity.getComponent(VisionComponent.class);
+        BehaviourComponent behaviour = Mappers.behaviour.get(entity);
+        VelocityComponent vel = Mappers.velocity.get(entity);
+        GenomeComponent dna = Mappers.genome.get(entity);
+        PositionComponent pos = Mappers.position.get(entity);
+        VisionComponent vision = Mappers.vision.get(entity);
 
         // In the "look around" pause, stay put until the timer expires, then face a new direction.
         if (behaviour.waitingAtTarget) {
@@ -154,7 +159,7 @@ public abstract class CreatureSystem extends IteratingSystem {
         vel.velocity.setZero();
         behaviour.hasTarget = false;
         behaviour.waitingAtTarget = true;
-        behaviour.waitAtTargetTimer = BehaviourComponent.WAIT_AT_TARGET_DURATION;
+        behaviour.waitAtTargetTimer = Balance.LOOK_AROUND_DURATION;
     }
 
     private void faceRandomDirection(BehaviourComponent behaviour, VisionComponent vision) {
@@ -164,9 +169,9 @@ public abstract class CreatureSystem extends IteratingSystem {
     }
 
     private void pickTargetPointInVisibleArea(Entity entity) {
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
-        VisionComponent vision = entity.getComponent(VisionComponent.class);
-        BehaviourComponent behaviour = entity.getComponent(BehaviourComponent.class);
+        PositionComponent pos = Mappers.position.get(entity);
+        VisionComponent vision = Mappers.vision.get(entity);
+        BehaviourComponent behaviour = Mappers.behaviour.get(entity);
 
         float distance = MathUtils.random(vision.visionRange * 0.5f, vision.visionRange);
         float halfVisionAngle = vision.visionAngle / 2f;
@@ -186,20 +191,20 @@ public abstract class CreatureSystem extends IteratingSystem {
      * everyone comes to drink, so this is where to look when there's nothing in sight.
      */
     protected void roamNearWater(Entity entity, float deltaTime) {
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
+        PositionComponent pos = Mappers.position.get(entity);
         Entity pond = WaterSourceSystem.findNearestWater(waterEntities, pos);
-        if (pond == null || WaterSourceSystem.distanceFromShore(pond, pos) <= WATERHOLE_RANGE) {
+        if (pond == null || WaterSourceSystem.distanceFromShore(pond, pos) <= Balance.WATERHOLE_RANGE) {
             explore(entity, deltaTime);
             return;
         }
-        float speed = Traits.speed(entity.getComponent(GenomeComponent.class));
+        float speed = Traits.speed(Mappers.genome.get(entity));
         moveToward(entity, WaterSourceSystem.approachPoint(pond, waterTarget), speed, deltaTime);
-        entity.getComponent(BehaviourComponent.class).hasTarget = false; // Pick a fresh wander target on arrival
+        Mappers.behaviour.get(entity).hasTarget = false; // Pick a fresh wander target on arrival
     }
 
     /** Walk to the nearest pond and drink there. */
     protected void seekWater(Entity entity, float deltaTime) {
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
+        PositionComponent pos = Mappers.position.get(entity);
 
         Entity pond = WaterSourceSystem.findNearestWater(waterEntities, pos);
         if (pond == null) {
@@ -209,11 +214,11 @@ public abstract class CreatureSystem extends IteratingSystem {
 
         if (WaterSourceSystem.canDrinkFrom(pond, pos)) {
             stop(entity);
-            WaterSourceSystem.drink(entity.getComponent(StatsComponent.class), deltaTime);
+            WaterSourceSystem.drink(Mappers.stats.get(entity), deltaTime);
             return;
         }
 
-        float speed = Traits.speed(entity.getComponent(GenomeComponent.class));
+        float speed = Traits.speed(Mappers.genome.get(entity));
         moveToward(entity, WaterSourceSystem.approachPoint(pond, waterTarget), speed, deltaTime);
     }
 
@@ -227,7 +232,7 @@ public abstract class CreatureSystem extends IteratingSystem {
         if (!MatingSystem.isReadyToMate(entity)) {
             return null;
         }
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
+        PositionComponent pos = Mappers.position.get(entity);
         float range = partnerSearchRange(entity);
 
         Iterable<Entity> candidates = allCreatures;
@@ -244,7 +249,7 @@ public abstract class CreatureSystem extends IteratingSystem {
                 || !canDetectPartner(entity, candidate)) {
                 continue;
             }
-            float distance = pos.position.dst(candidate.getComponent(PositionComponent.class).position);
+            float distance = pos.position.dst(Mappers.position.get(candidate).position);
             if (distance < nearestDistance) {
                 nearestDistance = distance;
                 nearest = candidate;
@@ -255,11 +260,21 @@ public abstract class CreatureSystem extends IteratingSystem {
 
     /** How far away a partner can be noticed. Prey rely on sight; predators override this to use smell. */
     protected float partnerSearchRange(Entity entity) {
-        return entity.getComponent(VisionComponent.class).visionRange;
+        float smell = mateScentRange(entity);
+        return smell > 0f ? smell : Mappers.vision.get(entity).visionRange;
+    }
+
+    /** Range at which this creature can smell a mate, or 0 if it finds mates by sight (prey). */
+    protected float mateScentRange(Entity entity) {
+        return 0f;
     }
 
     protected boolean canDetectPartner(Entity entity, Entity candidate) {
-        return canSee(entity.getComponent(PositionComponent.class), entity.getComponent(VisionComponent.class), candidate);
+        float smell = mateScentRange(entity);
+        if (smell > 0f) {
+            return Mappers.position.get(entity).position.dst2(Mappers.position.get(candidate).position) <= smell * smell;
+        }
+        return canSee(Mappers.position.get(entity), Mappers.vision.get(entity), candidate);
     }
 
     /**
@@ -271,26 +286,26 @@ public abstract class CreatureSystem extends IteratingSystem {
             roamNearWater(entity, deltaTime);
             return;
         }
-        Vector2 partnerPos = partner.getComponent(PositionComponent.class).position;
-        if (entity.getComponent(PositionComponent.class).position.dst(partnerPos) <= ReproductionComponent.MATING_DISTANCE * 0.8f) {
+        Vector2 partnerPos = Mappers.position.get(partner).position;
+        if (Mappers.position.get(entity).position.dst(partnerPos) <= Balance.MATING_DISTANCE * 0.8f) {
             stop(entity);
             return;
         }
-        moveToward(entity, partnerPos, Traits.speed(entity.getComponent(GenomeComponent.class)), deltaTime);
+        moveToward(entity, partnerPos, Traits.speed(Mappers.genome.get(entity)), deltaTime);
     }
 
     // --- Movement ---------------------------------------------------------------------------------------
 
     /** Moves toward a point at the given speed. Returns true if the map edge stopped the creature. */
     protected boolean moveToward(Entity entity, Vector2 target, float speed, float deltaTime) {
-        Vector2 direction = tmp.set(target).sub(entity.getComponent(PositionComponent.class).position).nor();
+        Vector2 direction = tmp.set(target).sub(Mappers.position.get(entity).position).nor();
         return moveInDirection(entity, direction.x, direction.y, speed, deltaTime);
     }
 
     /** Moves along a unit direction at the given speed. Returns true if the map edge stopped the creature. */
     protected boolean moveInDirection(Entity entity, float directionX, float directionY, float speed, float deltaTime) {
-        PositionComponent pos = entity.getComponent(PositionComponent.class);
-        VelocityComponent vel = entity.getComponent(VelocityComponent.class);
+        PositionComponent pos = Mappers.position.get(entity);
+        VelocityComponent vel = Mappers.velocity.get(entity);
 
         // Deep water can't be crossed: slide along its edge, i.e. walk around the pond
         heading.set(directionX, directionY);
@@ -302,7 +317,7 @@ public abstract class CreatureSystem extends IteratingSystem {
         boolean hitBoundary = clampToMap(pos);
         if (!hitBoundary && !vel.velocity.isZero()) {
             // Look where we're going.
-            entity.getComponent(VisionComponent.class).directionAngle =
+            Mappers.vision.get(entity).directionAngle =
                 (float) Math.toDegrees(Math.atan2(vel.velocity.y, vel.velocity.x));
         }
         return hitBoundary;
@@ -323,10 +338,15 @@ public abstract class CreatureSystem extends IteratingSystem {
      * True if the observer can see the target creature: inside its vision cone and within its vision range,
      * scaled by how easy the target is to spot (stealthy creatures must be closer to be seen).
      */
-    protected static boolean canSee(PositionComponent observerPos, VisionComponent vision, Entity target) {
-        GenomeComponent targetDna = target.getComponent(GenomeComponent.class);
-        float range = vision.visionRange * (targetDna != null ? Traits.visibility(targetDna) : 1f);
-        return isInVisionCone(observerPos, vision, target.getComponent(PositionComponent.class), range);
+    protected boolean canSee(PositionComponent observerPos, VisionComponent vision, Entity target) {
+        GenomeComponent targetDna = Mappers.genome.get(target);
+        float range = sightRange(vision) * (targetDna != null ? Traits.visibility(targetDna) : 1f);
+        return isInVisionCone(observerPos, vision, Mappers.position.get(target), range);
+    }
+
+    /** How far a creature can see right now: its vision range, shortened at night. */
+    protected float sightRange(VisionComponent vision) {
+        return vision.visionRange * lightLevel;
     }
 
     /** True if the point is inside the observer's vision cone and within {@code range}. */

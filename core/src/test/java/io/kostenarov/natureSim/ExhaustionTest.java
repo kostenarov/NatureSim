@@ -58,8 +58,8 @@ class ExhaustionTest extends SimTestSupport {
             }
         }
 
-        assertTrue(energyWhenItGotUp >= CreatureSystem.EXHAUSTION_RECOVERY_THRESHOLD,
-            "got up at energy " + energyWhenItGotUp + ", not before " + CreatureSystem.EXHAUSTION_RECOVERY_THRESHOLD);
+        assertTrue(energyWhenItGotUp >= Balance.EXHAUSTION_RECOVERY_THRESHOLD,
+            "got up at energy " + energyWhenItGotUp + ", not before " + Balance.EXHAUSTION_RECOVERY_THRESHOLD);
         assertEquals(EntityBehaviour.SEEKING_FOOD, behaviour(prey), "then went for the food");
         run(e, 2f);
         assertTrue(food.getComponent(FoodSourceComponent.class).consumed, "and ate it");
@@ -79,7 +79,7 @@ class ExhaustionTest extends SimTestSupport {
 
         run(e, 1f);
         assertEquals(EntityBehaviour.IDLE, behaviour(predator), "resting, not hunting");
-        assertEquals(2, e.getEntities().size(), "prey untouched");
+        assertEquals(2, creatureCount(e), "prey untouched");
     }
 
     @Test

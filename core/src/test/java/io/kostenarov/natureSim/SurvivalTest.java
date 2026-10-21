@@ -27,7 +27,7 @@ class SurvivalTest extends SimTestSupport {
         stats(a).thirst = 0f;
         stats(a).health = 5f;
         run(e, 3f);
-        assertEquals(0, e.getEntities().size(), "entities left");
+        assertEquals(0, creatureCount(e), "entities left");
     }
 
     @Test
@@ -38,6 +38,6 @@ class SurvivalTest extends SimTestSupport {
         stats(a).hunger = 0f;
         stats(a).health = 5f;
         run(e, 3f);
-        assertEquals(0, e.getEntities().size(), "entities left");
+        assertEquals(0, creatureCount(e), "entities left");
     }
 }

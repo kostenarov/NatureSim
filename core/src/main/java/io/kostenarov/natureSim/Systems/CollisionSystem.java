@@ -1,6 +1,5 @@
 package io.kostenarov.natureSim.Systems;
 
-import com.badlogic.ashley.core.ComponentMapper;
 import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.EntitySystem;
@@ -10,6 +9,7 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import io.kostenarov.natureSim.World;
 import io.kostenarov.natureSim.Components.PositionComponent;
+import io.kostenarov.natureSim.Mappers;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.Components.VelocityComponent;
 
@@ -26,8 +26,6 @@ public class CollisionSystem extends EntitySystem {
     private static final float CELL_SIZE = MIN_DISTANCE; // Any overlapping pair is at most one cell apart
     private static final int SOLVER_PASSES = 4; // Extra passes let tight crowds settle within a few frames
 
-    private final ComponentMapper<PositionComponent> positionMapper = ComponentMapper.getFor(PositionComponent.class);
-    private final ComponentMapper<VelocityComponent> velocityMapper = ComponentMapper.getFor(VelocityComponent.class);
 
     private ImmutableArray<Entity> bodies;
     private int columns;
@@ -56,8 +54,8 @@ public class CollisionSystem extends EntitySystem {
         }
         for (int i = 0; i < count; i++) {
             Entity body = bodies.get(i);
-            positions[i] = positionMapper.get(body).position;
-            VelocityComponent velocity = velocityMapper.get(body);
+            positions[i] = Mappers.position.get(body).position;
+            VelocityComponent velocity = Mappers.velocity.get(body);
             anchored[i] = velocity != null && velocity.velocity.isZero();
         }
 

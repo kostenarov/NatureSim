@@ -1,12 +1,12 @@
 package io.kostenarov.natureSim.Systems;
 
-import com.badlogic.ashley.core.ComponentMapper;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.utils.ImmutableArray;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 import io.kostenarov.natureSim.Components.PositionComponent;
+import io.kostenarov.natureSim.Mappers;
 
 import java.util.Arrays;
 
@@ -22,7 +22,6 @@ public class SpatialGrid {
 
     private static final float STALE_MARGIN = 16f; // Covers movement since the grid was rebuilt
 
-    private final ComponentMapper<PositionComponent> positionMapper = ComponentMapper.getFor(PositionComponent.class);
     private final float cellSize;
     private final int columns;
     private final int rows;
@@ -49,7 +48,7 @@ public class SpatialGrid {
 
         for (int i = 0; i < count; i++) {
             Entity entity = source.get(i);
-            Vector2 position = positionMapper.get(entity).position;
+            Vector2 position = Mappers.position.get(entity).position;
             int cell = cellIndex(columnOf(position.x), rowOf(position.y));
             entities[i] = entity;
             nextInCell[i] = cellHead[cell];
@@ -105,7 +104,7 @@ public class SpatialGrid {
                         if (!filter.accept(candidate)) {
                             continue;
                         }
-                        float distanceSquared = positionMapper.get(candidate).position.dst2(x, y);
+                        float distanceSquared = Mappers.position.get(candidate).position.dst2(x, y);
                         if (distanceSquared < nearestDistanceSquared) {
                             nearestDistanceSquared = distanceSquared;
                             nearest = candidate;

@@ -10,6 +10,9 @@ import com.badlogic.gdx.utils.Array;
 import io.kostenarov.natureSim.Components.*;
 import io.kostenarov.natureSim.SimulationConfig;
 import io.kostenarov.natureSim.Creatures;
+import io.kostenarov.natureSim.Enums.Gender;
+import io.kostenarov.natureSim.Mappers;
+import io.kostenarov.natureSim.Balance;
 
 public class MatingSystem extends EntitySystem {
     private ImmutableArray<Entity> matingEntities;
@@ -22,6 +25,7 @@ public class MatingSystem extends EntitySystem {
     private final float matingCooldown;   // Seconds between matings for one creature
     private final float mutationRate;     // Chance to mutate each gene
     private final float mutationAmount;   // Max amount to mutate by
+    private final float predatorBreedingSlowdown; // Predators wait this many times longer between matings
 
     public MatingSystem() {
         this(new SimulationConfig());
@@ -31,6 +35,7 @@ public class MatingSystem extends EntitySystem {
         this.matingCooldown = config.matingCooldown;
         this.mutationRate = config.mutationRate;
         this.mutationAmount = config.mutationAmount;
+        this.predatorBreedingSlowdown = config.predatorBreedingSlowdown;
     }
 
     @Override
@@ -47,7 +52,7 @@ public class MatingSystem extends EntitySystem {
     public void update(float deltaTime) {
         // Update mating cooldowns
         for (Entity entity : matingEntities) {
-            ReproductionComponent repro = entity.getComponent(ReproductionComponent.class);
+            ReproductionComponent repro = Mappers.reproduction.get(entity);
             if (repro.matingCooldown > 0) {
                 repro.matingCooldown -= deltaTime;
             }
@@ -61,11 +66,11 @@ public class MatingSystem extends EntitySystem {
                 continue;
             }
 
-            PositionComponent pos1 = entity1.getComponent(PositionComponent.class);
+            PositionComponent pos1 = Mappers.position.get(entity1);
             Iterable<Entity> candidates = matingEntities;
             if (index != null) {
                 // Only creatures within mating distance can be partners.
-                index.creatures().query(pos1.position.x, pos1.position.y, ReproductionComponent.MATING_DISTANCE, nearby);
+                index.creatures().query(pos1.position.x, pos1.position.y, Balance.MATING_DISTANCE, nearby);
                 candidates = nearby;
             }
 
@@ -73,7 +78,7 @@ public class MatingSystem extends EntitySystem {
                 if (!arePartners(entity1, entity2) || !isReadyToMate(entity2)) {
                     continue;
                 }
-                if (pos1.position.dst(entity2.getComponent(PositionComponent.class).position) > ReproductionComponent.MATING_DISTANCE) {
+                if (pos1.position.dst(Mappers.position.get(entity2).position) > Balance.MATING_DISTANCE) {
                     continue;
                 }
 
@@ -85,17 +90,17 @@ public class MatingSystem extends EntitySystem {
 
     private void mate(Entity parent1, Entity parent2) {
         // Deduct energy from both parents
-        StatsComponent stats1 = parent1.getComponent(StatsComponent.class);
-        StatsComponent stats2 = parent2.getComponent(StatsComponent.class);
-        ReproductionComponent repro1 = parent1.getComponent(ReproductionComponent.class);
-        ReproductionComponent repro2 = parent2.getComponent(ReproductionComponent.class);
+        StatsComponent stats1 = Mappers.stats.get(parent1);
+        StatsComponent stats2 = Mappers.stats.get(parent2);
+        ReproductionComponent repro1 = Mappers.reproduction.get(parent1);
+        ReproductionComponent repro2 = Mappers.reproduction.get(parent2);
 
-        stats1.energy -= ReproductionComponent.MATING_ENERGY_COST;
-        stats2.energy -= ReproductionComponent.MATING_ENERGY_COST;
+        stats1.energy -= Balance.MATING_ENERGY_COST;
+        stats2.energy -= Balance.MATING_ENERGY_COST;
         // The offspring is built from the parents' food reserves, so births are limited by food supply.
-        stats1.hunger -= ReproductionComponent.MATING_HUNGER_COST;
-        stats2.hunger -= ReproductionComponent.MATING_HUNGER_COST;
-        float cooldown = Creatures.isPredator(parent1) ? matingCooldown * ReproductionComponent.PREDATOR_COOLDOWN_FACTOR : matingCooldown;
+        stats1.hunger -= Balance.MATING_HUNGER_COST;
+        stats2.hunger -= Balance.MATING_HUNGER_COST;
+        float cooldown = Creatures.isPredator(parent1) ? matingCooldown * predatorBreedingSlowdown : matingCooldown;
         repro1.matingCooldown = cooldown;
         repro2.matingCooldown = cooldown;
 
@@ -105,8 +110,8 @@ public class MatingSystem extends EntitySystem {
     private void createOffspring(Entity parent1, Entity parent2) {
         // Each gene comes whole from one parent (averaging would shrink variation every generation),
         // then may mutate by a normally distributed amount.
-        GenomeComponent parent1Dna = parent1.getComponent(GenomeComponent.class);
-        GenomeComponent parent2Dna = parent2.getComponent(GenomeComponent.class);
+        GenomeComponent parent1Dna = Mappers.genome.get(parent1);
+        GenomeComponent parent2Dna = Mappers.genome.get(parent2);
         GenomeComponent offspringDna = new GenomeComponent();
 
         for (int i = 0; i < offspringDna.genes.length; i++) {
@@ -121,28 +126,32 @@ public class MatingSystem extends EntitySystem {
         }
 
         // Born next to parent 1
-        PositionComponent parentPos = parent1.getComponent(PositionComponent.class);
+        PositionComponent parentPos = Mappers.position.get(parent1);
         Entity offspring = Creatures.create(engine,
             parentPos.position.x + MathUtils.random(-20f, 20f),
             parentPos.position.y + MathUtils.random(-20f, 20f),
             offspringDna);
 
         // Newborns start half fed and a little frail
-        StatsComponent offspringStats = offspring.getComponent(StatsComponent.class);
+        StatsComponent offspringStats = Mappers.stats.get(offspring);
         offspringStats.energy = 50f;
-        offspringStats.hunger = 2 * ReproductionComponent.MATING_HUNGER_COST; // Exactly what the parents gave up
+        offspringStats.hunger = 2 * Balance.MATING_HUNGER_COST; // Exactly what the parents gave up
         offspringStats.thirst = 50f;
         offspringStats.health = 80f;
 
         // One generation after the younger-lineage parent
-        AgeComponent parent1Age = parent1.getComponent(AgeComponent.class);
-        AgeComponent parent2Age = parent2.getComponent(AgeComponent.class);
+        AgeComponent parent1Age = Mappers.age.get(parent1);
+        AgeComponent parent2Age = Mappers.age.get(parent2);
         int parentGeneration = Math.max(parent1Age != null ? parent1Age.generation : 0, parent2Age != null ? parent2Age.generation : 0);
-        offspring.getComponent(AgeComponent.class).generation = parentGeneration + 1;
+        Mappers.age.get(offspring).generation = parentGeneration + 1;
 
-        // Predator parents produce predator offspring
-        if (Creatures.isPredator(parent1)) {
-            Creatures.makePredator(offspring);
+        // Offspring take their parents' role
+        Creatures.copyRole(parent1, offspring);
+
+        LineageSystem lineage = engine.getSystem(LineageSystem.class);
+        if (lineage != null) {
+            boolean parent1IsMother = Mappers.gender.get(parent1).gender == Gender.FEMALE;
+            lineage.recordBirth(offspring, parent1IsMother ? parent1 : parent2, parent1IsMother ? parent2 : parent1);
         }
 
         engine.addEntity(offspring);
@@ -153,29 +162,29 @@ public class MatingSystem extends EntitySystem {
      * a creature survives.
      */
     public static boolean isReadyToMate(Entity creature) {
-        ReproductionComponent repro = creature.getComponent(ReproductionComponent.class);
-        StatsComponent stats = creature.getComponent(StatsComponent.class);
+        ReproductionComponent repro = Mappers.reproduction.get(creature);
+        StatsComponent stats = Mappers.stats.get(creature);
         if (repro == null || stats == null || repro.matingCooldown > 0) {
             return false;
         }
-        AgeComponent age = creature.getComponent(AgeComponent.class);
-        if (age != null && age.age < ReproductionComponent.MATURITY_AGE) {
+        AgeComponent age = Mappers.age.get(creature);
+        if (age != null && age.age < Balance.MATURITY_AGE) {
             return false;
         }
-        return stats.energy >= ReproductionComponent.MATING_ENERGY_COST
-            && stats.hunger >= (Creatures.isPredator(creature) ? ReproductionComponent.PREDATOR_MATING_MIN_HUNGER : ReproductionComponent.MATING_MIN_HUNGER)
-            && stats.thirst >= ReproductionComponent.MATING_MIN_THIRST;
+        return stats.energy >= Balance.MATING_ENERGY_COST
+            && stats.hunger >= (Creatures.isPredator(creature) ? Balance.PREDATOR_MATING_MIN_HUNGER : Balance.MATING_MIN_HUNGER)
+            && stats.thirst >= Balance.MATING_MIN_THIRST;
     }
 
-    /** Two different creatures of opposite sex and the same role (prey with prey, predators with predators). */
+    /** Two different creatures of opposite sex and the same role (prey with prey, predators with predators, ...). */
     public static boolean arePartners(Entity a, Entity b) {
         if (a == b) {
             return false;
         }
-        GenderComponent genderA = a.getComponent(GenderComponent.class);
-        GenderComponent genderB = b.getComponent(GenderComponent.class);
+        GenderComponent genderA = Mappers.gender.get(a);
+        GenderComponent genderB = Mappers.gender.get(b);
         return genderA != null && genderB != null && genderA.gender != genderB.gender
-            && Creatures.isPredator(a) == Creatures.isPredator(b);
+            && Creatures.role(a) == Creatures.role(b);
     }
 }
 

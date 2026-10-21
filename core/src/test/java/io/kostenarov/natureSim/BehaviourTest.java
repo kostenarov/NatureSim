@@ -77,7 +77,7 @@ class BehaviourTest extends SimTestSupport {
         e.update(DT);
         assertEquals(EntityBehaviour.SEEKING_MATE, male.getComponent(BehaviourComponent.class).behaviour);
         run(e, 3f);
-        assertEquals(3, e.getEntities().size(), "they met and had offspring");
+        assertEquals(3, creatureCount(e), "they met and had offspring");
     }
 
     @Test

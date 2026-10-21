@@ -11,16 +11,17 @@ import io.kostenarov.natureSim.Components.FoodSourceComponent;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.WaterSourceComponent;
 import io.kostenarov.natureSim.SimulationConfig;
+import io.kostenarov.natureSim.Mappers;
+import io.kostenarov.natureSim.Balance;
 
 public class FoodSourceSystem extends EntitySystem {
     private static final float FOOD_SIZE = 16f;
-    private static final float NEAR_WATER_CHANCE = 0.7f;      // Most food grows in the fertile band around ponds
-    private static final float FERTILE_BAND_WIDTH = 350f;     // How far from the shore that band reaches
     private static final int MAX_PLACEMENT_ATTEMPTS = 20;
 
     private final int initialFood;
     private final int maxFood;
     private final float spawnInterval; // Seconds between food spawns
+    private final float nutrition;     // Hunger each item restores
 
     private float spawnTimer = 0f;
     private ImmutableArray<Entity> foodEntities;
@@ -33,6 +34,7 @@ public class FoodSourceSystem extends EntitySystem {
         this.initialFood = config.initialFood;
         this.maxFood = config.maxFood;
         this.spawnInterval = config.foodSpawnInterval;
+        this.nutrition = config.foodNutrition;
     }
 
     @Override
@@ -50,14 +52,16 @@ public class FoodSourceSystem extends EntitySystem {
     public void update(float deltaTime) {
         // Remove consumed food
         for (Entity food : foodEntities) {
-            FoodSourceComponent foodComp = food.getComponent(FoodSourceComponent.class);
+            FoodSourceComponent foodComp = Mappers.foodSource.get(food);
             if (foodComp.consumed) {
                 getEngine().removeEntity(food);
             }
         }
 
         // Spawn new food periodically (several per frame if the interval is shorter than a frame)
-        spawnTimer += deltaTime;
+        // Seasons: food grows faster in summer and barely at all in winter
+        ClockSystem clock = getEngine().getSystem(ClockSystem.class);
+        spawnTimer += deltaTime * (clock != null ? clock.growthFactor() : 1f);
         while (spawnTimer >= spawnInterval) {
             spawnTimer -= spawnInterval;
             if (foodEntities.size() < maxFood) {
@@ -82,16 +86,18 @@ public class FoodSourceSystem extends EntitySystem {
 
         Entity food = getEngine().createEntity();
         food.add(pos);
-        food.add(new FoodSourceComponent());
+        FoodSourceComponent item = new FoodSourceComponent();
+        item.nutritionValue = nutrition;
+        food.add(item);
         getEngine().addEntity(food);
     }
 
     private void pickFoodPosition(ImmutableArray<Entity> ponds, PositionComponent pos) {
-        if (ponds.size() > 0 && MathUtils.random() < NEAR_WATER_CHANCE) {
+        if (ponds.size() > 0 && MathUtils.random() < Balance.NEAR_WATER_CHANCE) {
             // Fertile ground: a band around a random pond's shore
             Entity pond = ponds.random();
-            PositionComponent pondPos = pond.getComponent(PositionComponent.class);
-            float distance = pond.getComponent(WaterSourceComponent.class).radius + MathUtils.random(0f, FERTILE_BAND_WIDTH);
+            PositionComponent pondPos = Mappers.position.get(pond);
+            float distance = Mappers.waterSource.get(pond).radius + MathUtils.random(0f, Balance.FERTILE_BAND_WIDTH);
             float angle = MathUtils.random(MathUtils.PI2);
             pos.position.set(
                 MathUtils.clamp(pondPos.position.x + MathUtils.cos(angle) * distance, 0, World.WIDTH - FOOD_SIZE),

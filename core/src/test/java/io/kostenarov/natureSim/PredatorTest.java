@@ -25,7 +25,7 @@ class PredatorTest extends SimTestSupport {
         stats(p).hunger = 30f;
         creature(e, 1020, 1000, Gender.FEMALE, false);
         int frames = 0;
-        while (e.getEntities().size() == 2 && frames < 600) {
+        while (creatureCount(e) == 2 && frames < 600) {
             e.update(DT);
             frames++;
         }

@@ -42,9 +42,9 @@ class LifecycleTest extends SimTestSupport {
         old.getComponent(AgeComponent.class).lifespan = 1f;
 
         run(e, 0.5f);
-        assertEquals(1, e.getEntities().size(), "still alive halfway through its lifespan");
+        assertEquals(1, creatureCount(e), "still alive halfway through its lifespan");
         run(e, 1f);
-        assertEquals(0, e.getEntities().size(), "removed after its lifespan");
+        assertEquals(0, creatureCount(e), "removed after its lifespan");
     }
 
     @Test
@@ -70,7 +70,7 @@ class LifecycleTest extends SimTestSupport {
         grownCreature(e, 110, 100, Gender.FEMALE, 60f, 5);
         e.update(DT);
 
-        assertEquals(3, e.getEntities().size(), "one offspring born");
+        assertEquals(3, creatureCount(e), "one offspring born");
         assertEquals(6, e.getEntities().get(2).getComponent(AgeComponent.class).generation);
     }
 
@@ -79,11 +79,11 @@ class LifecycleTest extends SimTestSupport {
     void immatureCantMate() {
         Engine e = new Engine();
         e.addSystem(new MatingSystem());
-        float young = ReproductionComponent.MATURITY_AGE / 2f;
+        float young = Balance.MATURITY_AGE / 2f;
         grownCreature(e, 100, 100, Gender.MALE, young, 0);
         grownCreature(e, 110, 100, Gender.FEMALE, young, 0);
         e.update(DT);
 
-        assertEquals(2, e.getEntities().size(), "no offspring from immature parents");
+        assertEquals(2, creatureCount(e), "no offspring from immature parents");
     }
 }

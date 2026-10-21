@@ -198,7 +198,7 @@ public class SimulationScreen extends ScreenAdapter {
         Vector3 world = camera.unproject(touchPoint.set(screenX, screenY, 0));
         selectedEntity = null;
         for (Entity creature : creatures) {
-            PositionComponent pos = creature.getComponent(PositionComponent.class);
+            PositionComponent pos = Mappers.position.get(creature);
             if (world.x >= pos.position.x && world.x <= pos.position.x + World.CREATURE_SIZE
                 && world.y >= pos.position.y && world.y <= pos.position.y + World.CREATURE_SIZE) {
                 selectedEntity = creature;
@@ -240,11 +240,11 @@ public class SimulationScreen extends ScreenAdapter {
             return;
         }
 
-        StatsComponent stats = selectedEntity.getComponent(StatsComponent.class);
-        GenderComponent gender = selectedEntity.getComponent(GenderComponent.class);
-        BehaviourComponent behaviour = selectedEntity.getComponent(BehaviourComponent.class);
-        GenomeComponent dna = selectedEntity.getComponent(GenomeComponent.class);
-        AgeComponent age = selectedEntity.getComponent(AgeComponent.class);
+        StatsComponent stats = Mappers.stats.get(selectedEntity);
+        GenderComponent gender = Mappers.gender.get(selectedEntity);
+        BehaviourComponent behaviour = Mappers.behaviour.get(selectedEntity);
+        GenomeComponent dna = Mappers.genome.get(selectedEntity);
+        AgeComponent age = Mappers.age.get(selectedEntity);
 
         String[] lines = {
             (Creatures.isPredator(selectedEntity) ? "PREDATOR" : "PREY") + "  " + gender.gender + "  gen " + age.generation,

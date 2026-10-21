@@ -1,6 +1,5 @@
 package io.kostenarov.natureSim.Systems;
 
-import com.badlogic.ashley.core.ComponentMapper;
 import com.badlogic.ashley.core.Engine;
 import com.badlogic.ashley.core.Entity;
 import com.badlogic.ashley.core.Family;
@@ -8,6 +7,7 @@ import com.badlogic.ashley.systems.IteratingSystem;
 import com.badlogic.ashley.utils.ImmutableArray;
 import io.kostenarov.natureSim.Components.PositionComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
+import io.kostenarov.natureSim.Mappers;
 
 /**
  * Keeps every creature out of deep water, however it got there: pushed in by a crowd, born or spawned
@@ -15,7 +15,6 @@ import io.kostenarov.natureSim.Components.StatsComponent;
  * guarantee. Runs after collisions, so it works whether or not collision is enabled.
  */
 public class WaterBarrierSystem extends IteratingSystem {
-    private final ComponentMapper<PositionComponent> positionMapper = ComponentMapper.getFor(PositionComponent.class);
     private ImmutableArray<Entity> ponds;
 
     public WaterBarrierSystem() {
@@ -30,6 +29,6 @@ public class WaterBarrierSystem extends IteratingSystem {
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
-        WaterSourceSystem.pushOutOfDeepWater(ponds, positionMapper.get(entity).position);
+        WaterSourceSystem.pushOutOfDeepWater(ponds, Mappers.position.get(entity).position);
     }
 }

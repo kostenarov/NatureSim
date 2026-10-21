@@ -14,7 +14,7 @@ import io.kostenarov.natureSim.Components.StatsComponent;
  *   <li>METABOLISM: survives starvation and dehydration longer, but burns energy faster while active.</li>
  *   <li>RECOVERY_RATE: regains energy faster while resting, but burns more food while resting.</li>
  *   <li>HUNGER/THIRST_SENSITIVITY: starts looking for food/water earlier. Safer, but spends more time foraging.</li>
- *   <li>SCENT_RANGE (predators): smells prey from farther away, at a food cost.</li>
+ *   <li>SCENT_RANGE (predators and scavengers): smells prey or carcasses from farther away, at a food cost.</li>
  *   <li>SIZE: a tougher body takes less damage (and predators bite harder), but a big body needs more food.</li>
  *   <li>STEALTH: harder to spot, but stealthy movement is slower when chasing or fleeing.</li>
  * </ul>
@@ -100,11 +100,11 @@ public final class Traits {
     }
 
     /** Food and water upkeep multiplier (about 1 for an average creature). */
-    public static float upkeep(GenomeComponent dna, boolean predator) {
+    public static float upkeep(GenomeComponent dna, boolean usesScent) {
         float speed = speedFactor(dna);
         float upkeep = 0.4f + 0.4f * speed * speed + 0.2f * (visionRange(dna) / AVERAGE_VISION_RANGE);
         upkeep += 0.5f * (toughness(dna) - 1f); // A bigger body needs more food
-        if (predator) {
+        if (usesScent) {
             upkeep += 0.15f * (scentFactor(dna) - 1f);
         }
         return upkeep;
@@ -120,8 +120,8 @@ public final class Traits {
     // --- Metabolism ------------------------------------------------------------------------------------
 
     /** Drains hunger, thirst and energy for one active (moving) step, then applies starvation damage. */
-    public static void burnActive(StatsComponent stats, GenomeComponent dna, boolean predator, float deltaTime) {
-        float upkeep = upkeep(dna, predator);
+    public static void burnActive(StatsComponent stats, GenomeComponent dna, boolean usesScent, float deltaTime) {
+        float upkeep = upkeep(dna, usesScent);
         stats.hunger = Math.max(0f, stats.hunger - BASE_HUNGER_PER_SEC * upkeep * deltaTime);
         stats.thirst = Math.max(0f, stats.thirst - BASE_THIRST_PER_SEC * upkeep * deltaTime);
         stats.energy = Math.max(0f, stats.energy - energyBurnRate(dna) * deltaTime);
@@ -130,9 +130,9 @@ public final class Traits {
     }
 
     /** Recovers energy while resting; faster recovery burns more food. */
-    public static void rest(StatsComponent stats, GenomeComponent dna, boolean predator, float deltaTime) {
+    public static void rest(StatsComponent stats, GenomeComponent dna, boolean usesScent, float deltaTime) {
         float recoveryGene = 0.5f + gene(dna, GenomeComponent.RECOVERY_RATE);
-        float upkeep = upkeep(dna, predator) * RESTING_UPKEEP;
+        float upkeep = upkeep(dna, usesScent) * RESTING_UPKEEP;
         stats.energy = Math.min(100f, stats.energy + BASE_ENERGY_RECOVER_PER_SEC * recoveryGene * deltaTime);
         stats.hunger = Math.max(0f, stats.hunger - BASE_HUNGER_PER_SEC * upkeep * (recoveryGene / 1.5f) * deltaTime);
         stats.thirst = Math.max(0f, stats.thirst - BASE_THIRST_PER_SEC * upkeep * deltaTime);

@@ -7,6 +7,7 @@ import com.badlogic.gdx.math.MathUtils;
 import io.kostenarov.natureSim.Components.AgeComponent;
 import io.kostenarov.natureSim.Components.StatsComponent;
 import io.kostenarov.natureSim.SimulationConfig;
+import io.kostenarov.natureSim.Mappers;
 
 /**
  * Ages creatures and kills them at the end of their lifespan, so old genomes make way for new ones.
@@ -28,14 +29,14 @@ public class AgingSystem extends IteratingSystem {
 
     @Override
     protected void processEntity(Entity entity, float deltaTime) {
-        AgeComponent age = entity.getComponent(AgeComponent.class);
+        AgeComponent age = Mappers.age.get(entity);
         if (age.lifespan <= 0f) {
             age.lifespan = baseLifespan * MathUtils.random(1f - LIFESPAN_VARIATION, 1f + LIFESPAN_VARIATION);
         }
 
         age.age += deltaTime;
         if (age.age >= age.lifespan) {
-            entity.getComponent(StatsComponent.class).health = 0f; // DeathSystem removes it
+            Mappers.stats.get(entity).health = 0f; // DeathSystem removes it
         }
     }
 }

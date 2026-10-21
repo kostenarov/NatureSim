@@ -4,10 +4,13 @@ import com.badlogic.ashley.core.Entity;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector3;
 import io.kostenarov.natureSim.Components.PositionComponent;
 
 /**
- * Moves the world camera: WASD/arrows pan, Q/E zoom, and the camera can smoothly follow a creature.
+ * Moves the world camera: WASD/arrows or mouse drag pan, Q/E or the mouse wheel zoom, and the camera can
+ * smoothly follow a creature.
  * Runs on real time (not simulation steps), so it stays responsive while paused or sped up.
  */
 public class CameraController {
@@ -17,7 +20,10 @@ public class CameraController {
     private static final float MIN_ZOOM = 0.5f;
     private static final float MAX_ZOOM = 2f;
 
+    private static final float WHEEL_ZOOM_STEP = 0.1f;   // Zoom change per mouse-wheel notch
+
     private final OrthographicCamera camera;
+    private final Vector3 scratch = new Vector3();
     private Entity target;
     private boolean following = true;
 
@@ -39,11 +45,45 @@ public class CameraController {
         return following && target != null;
     }
 
+    // --- Mouse ------------------------------------------------------------------------------------------
+
+    /**
+     * Zooms in (negative amount) or out (positive) around a point on screen, so whatever is under the mouse
+     * stays under the mouse.
+     */
+    public void zoomAt(float screenX, float screenY, float amount) {
+        Vector3 before = camera.unproject(scratch.set(screenX, screenY, 0f));
+        float beforeX = before.x;
+        float beforeY = before.y;
+        camera.zoom = MathUtils.clamp(camera.zoom * (1f + amount * WHEEL_ZOOM_STEP), MIN_ZOOM, MAX_ZOOM);
+        camera.update();
+        Vector3 after = camera.unproject(scratch.set(screenX, screenY, 0f));
+        camera.position.add(beforeX - after.x, beforeY - after.y, 0f);
+        keepInsideMap();
+        camera.update();
+    }
+
+    /** Drags the map by a distance in screen pixels; dragging takes over from following. */
+    public void panByScreenPixels(float deltaX, float deltaY) {
+        camera.position.add(-deltaX * camera.zoom, deltaY * camera.zoom, 0f);
+        following = false;
+        keepInsideMap();
+        camera.update();
+    }
+
+    /** Centers the view on a point in the world (used by the minimap). */
+    public void centerOn(float worldX, float worldY) {
+        camera.position.set(worldX, worldY, 0f);
+        following = false;
+        keepInsideMap();
+        camera.update();
+    }
+
     public void update(float deltaTime) {
         handleKeys(deltaTime);
 
         if (isFollowing()) {
-            PositionComponent pos = target.getComponent(PositionComponent.class);
+            PositionComponent pos = Mappers.position.get(target);
             float targetX = pos.position.x + World.CREATURE_HALF_SIZE;
             float targetY = pos.position.y + World.CREATURE_HALF_SIZE;
             camera.position.x += (targetX - camera.position.x) * FOLLOW_SMOOTHNESS;
